@@ -10,7 +10,12 @@ PAGES = [
     "https://fineli.fi/fineli/fi/avoin-data",
     "https://fineli.fi/fineli/en/avoin-data",
 ]
-UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Treenipaivakirja-build"}
+UA = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/zip,*/*;q=0.8",
+    "Accept-Language": "fi-FI,fi;q=0.9,en;q=0.8",
+    "Referer": "https://fineli.fi/fineli/fi/avoin-data",
+}
 OUT = "app/src/main/assets/fineli.csv"
 INFO = "app/src/main/assets/fineli_info.txt"
 

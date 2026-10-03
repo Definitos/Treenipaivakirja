@@ -16,6 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Probe
+        continue-on-error: true
+        run: |
+          curl -sS -o /dev/null -D - -A "Mozilla/5.0" https://fineli.fi/fineli/fi/avoin-data | head -20 | sed 's/^/::warning::probe /'
+          curl -sS -o /dev/null -w "::warning::api %{http_code}\n" "https://fineli.fi/fineli/api/v1/foods?q=omena"
       - name: Fetch Fineli
         run: python3 .github/scripts/fetch_fineli.py
       - name: Commit data
