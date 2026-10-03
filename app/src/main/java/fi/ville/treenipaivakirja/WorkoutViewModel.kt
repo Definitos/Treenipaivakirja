@@ -1,6 +1,10 @@
 package fi.ville.treenipaivakirja
 
 import android.app.Application
+import android.content.Context
+import androidx.annotation.StringRes
+import fi.ville.treenipaivakirja.ui.WeightUnit
+import java.util.Locale
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -48,10 +52,10 @@ data class TemplateWithItems(val template: Template, val items: List<TemplateIte
 data class DraftItem(val key: Long, val name: String, val sets: Int, val reps: Int)
 data class TemplateDraft(val id: Long?, val name: String, val items: List<DraftItem>)
 
-enum class Metric(val label: String) {
-    MAX("Maks. paino"),
-    ONE_RM("Arvio 1RM"),
-    VOLUME("Volyymi")
+enum class Metric(@StringRes val labelRes: Int) {
+    MAX(R.string.metric_max),
+    ONE_RM(R.string.metric_1rm),
+    VOLUME(R.string.volume)
 }
 
 fun DayStat.value(m: Metric): Double = when (m) {
@@ -74,6 +78,20 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = db.dao()
     private fun <T> Flow<T>.state(initial: T): StateFlow<T> =
         stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
+
+    // ---------- Asetukset ----------
+    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    /** Oletus: paunat USA:ssa, Liberiassa ja Myanmarissa, muuten kilot. */
+    val unit = MutableStateFlow(
+        WeightUnit.entries.firstOrNull { it.name == prefs.getString("unit", null) }
+            ?: if (Locale.getDefault().country in setOf("US", "LR", "MM")) WeightUnit.LB else WeightUnit.KG
+    )
+
+    fun setUnit(u: WeightUnit) {
+        unit.value = u
+        prefs.edit().putString("unit", u.name).apply()
+    }
 
     // ---------- Päivänäkymä ----------
     val selectedDay = MutableStateFlow(LocalDate.now())

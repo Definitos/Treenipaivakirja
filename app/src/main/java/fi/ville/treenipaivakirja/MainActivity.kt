@@ -20,6 +20,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import fi.ville.treenipaivakirja.ui.LocalUnit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +54,7 @@ class MainActivity : ComponentActivity() {
 fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
+    val unit by vm.unit.collectAsStateWithLifecycle()
 
     val itemColors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.Black,
@@ -59,6 +64,7 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
         unselectedTextColor = Muted
     )
 
+    CompositionLocalProvider(LocalUnit provides unit) {
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -67,17 +73,17 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
                 NavigationBarItem(
                     selected = tab == 0, onClick = { tab = 0 },
                     icon = { Icon(Icons.Filled.FitnessCenter, contentDescription = null) },
-                    label = { Text("Treenit") }, colors = itemColors
+                    label = { Text(stringResource(R.string.tab_workouts)) }, colors = itemColors
                 )
                 NavigationBarItem(
                     selected = tab == 1, onClick = { tab = 1 },
                     icon = { Icon(Icons.Filled.Bookmarks, contentDescription = null) },
-                    label = { Text("Ohjelmat") }, colors = itemColors
+                    label = { Text(stringResource(R.string.tab_programs)) }, colors = itemColors
                 )
                 NavigationBarItem(
                     selected = tab == 2, onClick = { tab = 2 },
                     icon = { Icon(Icons.Filled.Timeline, contentDescription = null) },
-                    label = { Text("Historia") }, colors = itemColors
+                    label = { Text(stringResource(R.string.tab_history)) }, colors = itemColors
                 )
             }
         }
@@ -89,5 +95,6 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
                 else -> HistoryScreen(vm)
             }
         }
+    }
     }
 }

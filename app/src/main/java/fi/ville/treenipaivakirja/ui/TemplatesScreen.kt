@@ -59,6 +59,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
+import fi.ville.treenipaivakirja.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -94,9 +96,9 @@ fun TemplatesScreen(vm: WorkoutViewModel) {
         ) {
             item {
                 Column {
-                    Text("Kirjasto", color = Lime, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.library), color = Lime, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                     Text(
-                        "Treeniohjelmat",
+                        stringResource(R.string.programs_title),
                         color = Color.White,
                         fontWeight = FontWeight.ExtraBold,
                         style = MaterialTheme.typography.headlineSmall
@@ -125,7 +127,7 @@ fun TemplatesScreen(vm: WorkoutViewModel) {
             contentColor = Color.Black,
             shape = RoundedCornerShape(18.dp),
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("Uusi ohjelma", fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.new_program), fontWeight = FontWeight.Bold) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
@@ -136,14 +138,14 @@ fun TemplatesScreen(vm: WorkoutViewModel) {
         AlertDialog(
             onDismissRequest = { deleting = null },
             containerColor = CardBg,
-            title = { Text("Poistetaanko ${t.template.name}?", fontWeight = FontWeight.Bold) },
-            text = { Text("Ohjelma poistuu kirjastosta. Jo kirjatut treenit säilyvät.", color = Muted) },
+            title = { Text(stringResource(R.string.delete_program_title, t.template.name), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.delete_program_body), color = Muted) },
             confirmButton = {
                 TextButton(onClick = { vm.deleteTemplate(t.template.id); deleting = null }) {
-                    Text("Poista", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Peruuta") } }
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } }
         )
     }
 }
@@ -178,12 +180,12 @@ fun TemplateCard(
             Column(Modifier.weight(1f)) {
                 Text(t.template.name, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "${t.items.size} liikettä · ${t.items.sumOf { it.targetSets }} sarjaa",
+                    stringResource(R.string.program_summary, t.items.size, t.items.sumOf { it.targetSets }),
                     color = Muted, fontSize = 13.sp
                 )
             }
-            if (onEdit != null) IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Muokkaa", tint = Muted) }
-            if (onDelete != null) IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "Poista", tint = Muted) }
+            if (onEdit != null) IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.edit), tint = Muted) }
+            if (onDelete != null) IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete), tint = Muted) }
         }
         Spacer(Modifier.height(10.dp))
         t.items.forEach { item ->
@@ -208,9 +210,9 @@ private fun EmptyTemplates() {
     ) {
         Icon(Icons.Filled.Bookmarks, null, tint = Lime, modifier = Modifier.size(40.dp))
         Spacer(Modifier.height(12.dp))
-        Text("Ei vielä ohjelmia", fontWeight = FontWeight.Bold, color = Color.White)
+        Text(stringResource(R.string.no_programs_title), fontWeight = FontWeight.Bold, color = Color.White)
         Text(
-            "Luo esim. \"Yläkroppa 1\" ja lataa se treenipäivälle yhdellä napautuksella.",
+            stringResource(R.string.no_programs_body),
             color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center
         )
     }
@@ -251,10 +253,10 @@ private fun TemplateEditor(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onCancel) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Takaisin", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = Color.White)
                 }
                 Text(
-                    if (initial.id == null) "Uusi ohjelma" else "Muokkaa ohjelmaa",
+                    stringResource(if (initial.id == null) R.string.new_program else R.string.edit_program),
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     style = MaterialTheme.typography.titleLarge
@@ -265,8 +267,8 @@ private fun TemplateEditor(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Ohjelman nimi") },
-                placeholder = { Text("esim. Yläkroppa 1") },
+                label = { Text(stringResource(R.string.program_name)) },
+                placeholder = { Text(stringResource(R.string.program_name_hint)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth()
@@ -295,12 +297,12 @@ private fun TemplateEditor(
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Lisää liike", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.add_exercise), color = Color.White, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = newExercise,
                         onValueChange = { newExercise = it },
-                        placeholder = { Text("Liikkeen nimi") },
+                        placeholder = { Text(stringResource(R.string.exercise_name)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
@@ -317,7 +319,7 @@ private fun TemplateEditor(
                             .background(if (newExercise.isNotBlank()) Lime else CardBg2)
                             .clickable { addItem(newExercise) },
                         contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Filled.Add, "Lisää", tint = if (newExercise.isNotBlank()) Color.Black else Muted) }
+                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add), tint = if (newExercise.isNotBlank()) Color.Black else Muted) }
                 }
                 if (suggestions.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -336,7 +338,7 @@ private fun TemplateEditor(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
-            ) { Text("Tallenna ohjelma", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            ) { Text(stringResource(R.string.save_program), fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         }
     }
 }
@@ -370,16 +372,16 @@ private fun EditorRow(
             Spacer(Modifier.width(10.dp))
             Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = onUp, enabled = canUp) {
-                Icon(Icons.Filled.KeyboardArrowUp, "Ylös", tint = if (canUp) Muted else CardBg2)
+                Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.move_up), tint = if (canUp) Muted else CardBg2)
             }
             IconButton(onClick = onDown, enabled = canDown) {
-                Icon(Icons.Filled.KeyboardArrowDown, "Alas", tint = if (canDown) Muted else CardBg2)
+                Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.move_down), tint = if (canDown) Muted else CardBg2)
             }
-            IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, "Poista", tint = Muted) }
+            IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, stringResource(R.string.remove), tint = Muted) }
         }
         Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Stepper("Sarjat", item.sets, 1..10, Modifier.weight(1f)) { onChange(item.copy(sets = it)) }
-            Stepper("Toistot", item.reps, 1..50, Modifier.weight(1f)) { onChange(item.copy(reps = it)) }
+            Stepper(stringResource(R.string.sets), item.sets, 1..10, Modifier.weight(1f)) { onChange(item.copy(sets = it)) }
+            Stepper(stringResource(R.string.reps), item.reps, 1..50, Modifier.weight(1f)) { onChange(item.copy(reps = it)) }
         }
     }
 }
@@ -394,14 +396,14 @@ private fun Stepper(label: String, value: Int, range: IntRange, modifier: Modifi
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = { if (value > range.first) onValue(value - 1) }) {
-            Icon(Icons.Filled.Remove, "Vähemmän", tint = Color.White)
+            Icon(Icons.Filled.Remove, stringResource(R.string.fewer), tint = Color.White)
         }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$value", color = Lime, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
             Text(label, color = Muted, fontSize = 11.sp)
         }
         IconButton(onClick = { if (value < range.last) onValue(value + 1) }) {
-            Icon(Icons.Filled.Add, "Enemmän", tint = Color.White)
+            Icon(Icons.Filled.Add, stringResource(R.string.more), tint = Color.White)
         }
     }
 }

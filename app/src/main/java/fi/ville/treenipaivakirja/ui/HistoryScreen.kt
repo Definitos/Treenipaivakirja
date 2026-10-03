@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
+import fi.ville.treenipaivakirja.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -59,8 +61,9 @@ fun HistoryScreen(vm: WorkoutViewModel) {
         }
     }
 
-    val values = stats.map { it.value(metric).toFloat() }
-    val labels = stats.map { LocalDate.ofEpochDay(it.epochDay).fiShort() }
+    val unit = LocalUnit.current
+    val values = stats.map { unit.fromKg(it.value(metric)).toFloat() }
+    val labels = stats.map { LocalDate.ofEpochDay(it.epochDay).shortLabel() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -69,9 +72,9 @@ fun HistoryScreen(vm: WorkoutViewModel) {
     ) {
         item {
             Column {
-                Text("Kehitys", color = Lime, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.progress), color = Lime, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Historia",
+                    stringResource(R.string.tab_history),
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     style = MaterialTheme.typography.headlineSmall
@@ -107,7 +110,7 @@ fun HistoryScreen(vm: WorkoutViewModel) {
                     FilterChip(
                         selected = m == metric,
                         onClick = { metric = m },
-                        label = { Text(m.label, fontSize = 13.sp) },
+                        label = { Text(stringResource(m.labelRes), fontSize = 13.sp) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Cyan,
                             selectedLabelColor = Color.Black,
@@ -127,12 +130,12 @@ fun HistoryScreen(vm: WorkoutViewModel) {
                     .padding(vertical = 16.dp, horizontal = 8.dp)
             ) {
                 if (values.isEmpty()) {
-                    Text("Ei vielä merkintöjä", color = Muted, modifier = Modifier.padding(16.dp))
+                    Text(stringResource(R.string.no_entries), color = Muted, modifier = Modifier.padding(16.dp))
                 } else {
                     LineChart(
                         values = values,
                         labels = labels,
-                        unit = "kg",
+                        unit = unit.label,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(240.dp)
@@ -145,7 +148,7 @@ fun HistoryScreen(vm: WorkoutViewModel) {
             item { StatsRow(stats, metric) }
             item {
                 Text(
-                    "Treenikerrat",
+                    stringResource(R.string.sessions),
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
@@ -166,11 +169,11 @@ private fun StatsRow(stats: List<DayStat>, metric: Metric) {
     val change = if (stats.size > 1 && first > 0) (latest - first) / first * 100 else null
 
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MiniStat("Ennätys", "${num(record)} kg", Modifier.weight(1f), trophy = true)
-        MiniStat("Viimeisin", "${num(latest)} kg", Modifier.weight(1f))
+        MiniStat(stringResource(R.string.record), wt(record), Modifier.weight(1f), trophy = true)
+        MiniStat(stringResource(R.string.latest), wt(latest), Modifier.weight(1f))
         MiniStat(
-            "Kehitys",
-            change?.let { String.format(FI, "%+.0f %%", it) } ?: "–",
+            stringResource(R.string.change),
+            change?.let { String.format(appLocale(), "%+.0f %%", it) } ?: "–",
             Modifier.weight(1f)
         )
     }
@@ -201,6 +204,7 @@ private fun MiniStat(label: String, value: String, modifier: Modifier, trophy: B
 
 @Composable
 private fun SessionRow(s: DayStat, metric: Metric) {
+    val unit = LocalUnit.current
     Row(
         Modifier
             .fillMaxWidth()
@@ -211,18 +215,18 @@ private fun SessionRow(s: DayStat, metric: Metric) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                LocalDate.ofEpochDay(s.epochDay).fiSession(),
+                LocalDate.ofEpochDay(s.epochDay).sessionLabel(),
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                s.sets.joinToString("  ·  ") { "${num(it.weight)}×${it.reps}" },
+                s.sets.joinToString("  ·  ") { "${num(unit.fromKg(it.weight))}×${it.reps}" },
                 color = Muted,
                 fontSize = 13.sp
             )
         }
         Text(
-            "${num(s.value(metric))} kg",
+            wt(s.value(metric)),
             color = Lime,
             fontWeight = FontWeight.Bold
         )
@@ -241,9 +245,9 @@ private fun EmptyHistory() {
     ) {
         Icon(Icons.Filled.Timeline, null, tint = Cyan, modifier = Modifier.size(40.dp))
         Spacer(Modifier.height(12.dp))
-        Text("Historia on vielä tyhjä", fontWeight = FontWeight.Bold, color = Color.White)
+        Text(stringResource(R.string.empty_history_title), fontWeight = FontWeight.Bold, color = Color.White)
         Text(
-            "Kirjaa treenejä, niin kehityskäyrät ilmestyvät tänne.",
+            stringResource(R.string.empty_history_body),
             color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center
         )
     }

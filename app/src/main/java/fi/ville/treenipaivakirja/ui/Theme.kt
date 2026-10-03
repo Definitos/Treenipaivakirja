@@ -4,12 +4,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import fi.ville.treenipaivakirja.R
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToLong
 
 // ---------- Värit ----------
 val Lime = Color(0xFFC6FF3D)
@@ -45,23 +51,54 @@ fun TreeniTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }
 
+// ---------- Painoyksikkö ----------
+/** Tietokannassa paino on aina kiloina; yksikkö vaikuttaa vain näyttöön ja syöttöön. */
+enum class WeightUnit(val label: String, private val perKg: Double) {
+    KG("kg", 1.0),
+    LB("lb", 2.20462262185);
+
+    fun fromKg(kg: Double): Double = kg * perKg
+    fun toKg(value: Double): Double = value / perKg
+}
+
+val LocalUnit = staticCompositionLocalOf { WeightUnit.KG }
+
+/** Kilot -> "80 kg" / "176,4 lb" valitulla yksiköllä. */
+@Composable
+fun wt(kg: Double): String {
+    val u = LocalUnit.current
+    return "${num(u.fromKg(kg))} ${u.label}"
+}
+
+/** Kilot -> pelkkä luku valitulla yksiköllä. */
+@Composable
+fun wtNum(kg: Double): String = num(LocalUnit.current.fromKg(kg))
+
 // ---------- Muotoilu ----------
-val FI: Locale = Locale.forLanguageTag("fi-FI")
+/** 82.5 -> "82,5" (fi) / "82.5" (en), 12450.0 -> "12 450" / "12,450" */
+fun num(d: Double): String =
+    NumberFormat.getNumberInstance(Locale.getDefault()).apply { maximumFractionDigits = 1 }.format(d)
 
-private val numberFormat: NumberFormat =
-    NumberFormat.getNumberInstance(FI).apply { maximumFractionDigits = 1 }
+/** Kenttään esitäytettävä arvo yhdellä desimaalilla, ilman tuhaterottimia. */
+fun editable(d: Double): String {
+    val r = (d * 10).roundToLong() / 10.0
+    val sep = DecimalFormatSymbols.getInstance().decimalSeparator
+    return if (r % 1.0 == 0.0) r.toLong().toString() else r.toString().replace('.', sep)
+}
 
-/** 82.5 -> "82,5", 100.0 -> "100", 12450.0 -> "12 450" */
-fun num(d: Double): String = numberFormat.format(d)
+/** Hyväksyy sekä pilkun että pisteen desimaalierottimena. */
+fun parseDecimal(s: String): Double? = s.trim().replace(',', '.').toDoubleOrNull()
 
-/** Kenttään esitäytettävä arvo: 82.5 -> "82,5", 100.0 -> "100" */
-fun editable(d: Double): String =
-    if (d % 1.0 == 0.0) d.toLong().toString() else d.toString().replace('.', ',')
+@Composable
+fun appLocale(): Locale = LocalConfiguration.current.locales[0]
 
-private val longFmt = DateTimeFormatter.ofPattern("EEEE d.M.yyyy", FI)
-private val shortFmt = DateTimeFormatter.ofPattern("d.M.", FI)
-private val sessionFmt = DateTimeFormatter.ofPattern("EEE d.M.yyyy", FI)
+@Composable
+private fun LocalDate.fmt(patternRes: Int): String {
+    val loc = appLocale()
+    return format(DateTimeFormatter.ofPattern(stringResource(patternRes), loc))
+        .replaceFirstChar { it.titlecase(loc) }
+}
 
-fun LocalDate.fiLong(): String = format(longFmt).replaceFirstChar { it.titlecase(FI) }
-fun LocalDate.fiShort(): String = format(shortFmt)
-fun LocalDate.fiSession(): String = format(sessionFmt).replaceFirstChar { it.titlecase(FI) }
+@Composable fun LocalDate.longLabel(): String = fmt(R.string.fmt_date_long)
+@Composable fun LocalDate.shortLabel(): String = fmt(R.string.fmt_date_short)
+@Composable fun LocalDate.sessionLabel(): String = fmt(R.string.fmt_date_session)
