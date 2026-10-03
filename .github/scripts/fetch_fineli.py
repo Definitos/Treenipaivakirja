@@ -27,7 +27,7 @@ def candidates():
         try:
             html, _ = get(page)
         except Exception as e:
-            print(f"page {page}: {e}")
+            print(f"::warning::page {page}: {e}")
             continue
         html = html.decode("utf-8", "replace")
         for href in re.findall(r'href="([^"]+)"', html):
@@ -36,7 +36,7 @@ def candidates():
                     href = "https://fineli.fi" + href
                 if href not in links:
                     links.append(href)
-    print("candidate links:", links)
+    print(f"::warning::candidate links: {links}")
     # Varalla: tunnetut tiedostonumerot
     for n in range(1, 120):
         u = f"https://fineli.fi/fineli/content/file/{n}"
@@ -48,17 +48,21 @@ def candidates():
 def find_package():
     """Palauttaa (zip, nimi) paketille, jossa on food.csv + component_value.csv (+ mieluiten englanninkieliset nimet)."""
     best = None
+    n_err = [0]
     for url in candidates():
         try:
             data, disp = get(url)
         except Exception as e:
+            if n_err[0] < 3:
+                print(f"::warning::{url}: {e}")
+            n_err[0] += 1
             continue
         if data[:2] != b"PK":
             continue
         z = zipfile.ZipFile(io.BytesIO(data))
         names = [n.lower() for n in z.namelist()]
         base = {n.rsplit("/", 1)[-1] for n in names}
-        print(f"{url} {disp} -> {sorted(base)[:30]}")
+        print(f"::warning::{url} {disp} -> {sorted(base)[:30]}")
         if "food.csv" in base and "component_value.csv" in base:
             score = 2 if "foodname_en.csv" in base else 1
             label = re.search(r'filename="?([^";]+)', disp)
@@ -83,7 +87,7 @@ def read_csv(z, name):
             pass
     rows = list(csv.reader(io.StringIO(text), delimiter=";"))
     header = [h.strip().upper() for h in rows[0]]
-    print(f"{name}: {header} ({len(rows) - 1} rows), sample: {rows[1] if len(rows) > 1 else None}")
+    print(f"::warning::{name}: {header} ({len(rows) - 1} rows), sample: {rows[1] if len(rows) > 1 else None}")
     return [dict(zip(header, r)) for r in rows[1:] if r]
 
 
