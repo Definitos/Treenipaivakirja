@@ -81,4 +81,9 @@
     <string name="fmt_date_long">EEEE, MMM d, yyyy</string>
     <string name="fmt_date_short">M/d</string>
     <string name="fmt_date_session">EEE, MMM d, yyyy</string>
+    <string name="reps_min">Reps min</string>
+    <string name="reps_max">Reps max</string>
+    <string name="go_heavier">Go heavier next time</string>
+    <string name="save_set">Save set</string>
+    <string name="target">Target %1$s</string>
 </resources>

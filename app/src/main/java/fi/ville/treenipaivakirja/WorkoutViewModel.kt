@@ -33,6 +33,7 @@ data class ExerciseGroup(
     val sets: List<WorkoutSet>,
     val targetSets: Int,
     val targetReps: Int,
+    val targetRepsMax: Int,
     val previous: List<WorkoutSet>
 )
 
@@ -45,11 +46,11 @@ data class DayStat(
     val sets: List<WorkoutSet>
 )
 
-data class TemplateItem(val exerciseName: String, val targetSets: Int, val targetReps: Int)
+data class TemplateItem(val exerciseName: String, val targetSets: Int, val targetReps: Int, val targetRepsMax: Int)
 data class TemplateWithItems(val template: Template, val items: List<TemplateItem>)
 
 /** Ohjelmaeditorin muokattava rivi. key = vakaa tunniste listaa varten. */
-data class DraftItem(val key: Long, val name: String, val sets: Int, val reps: Int)
+data class DraftItem(val key: Long, val name: String, val sets: Int, val reps: Int, val repsMax: Int = reps)
 data class TemplateDraft(val id: Long?, val name: String, val items: List<DraftItem>)
 
 enum class Metric(@StringRes val labelRes: Int) {
@@ -63,6 +64,9 @@ fun DayStat.value(m: Metric): Double = when (m) {
     Metric.ONE_RM -> est1rm
     Metric.VOLUME -> volume
 }
+
+/** "8–10" tai "8" (jos ei haarukkaa). */
+fun repsRange(min: Int, max: Int): String = if (max > min) "$min–$max" else "$min"
 
 /** Epleyn kaava: arvioitu yhden toiston maksimi. */
 fun epley(weight: Double, reps: Int): Double =
@@ -123,6 +127,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                             sets = setsBy[id].orEmpty(),
                             targetSets = plannedBy[id]?.targetSets ?: 0,
                             targetReps = plannedBy[id]?.targetReps ?: 0,
+                            targetRepsMax = plannedBy[id]?.targetRepsMax ?: 0,
                             previous = prevBy[id].orEmpty()
                         )
                     }
@@ -153,6 +158,16 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Yksittäisen sarjan kirjaus suoraan liikekortista (paino kiloina). */
+    fun logSet(exerciseId: Long, reps: Int, weightKg: Double) {
+        if (reps <= 0 || weightKg < 0) return
+        viewModelScope.launch {
+            dao.insertSets(listOf(
+                WorkoutSet(exerciseId = exerciseId, epochDay = selectedDay.value.toEpochDay(), reps = reps, weight = weightKg)
+            ))
+        }
+    }
+
     fun deleteSet(set: WorkoutSet) = viewModelScope.launch { dao.deleteSet(set) }
 
     fun restoreSet(set: WorkoutSet) = viewModelScope.launch { dao.insertSets(listOf(set)) }
@@ -171,7 +186,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         db.withTransaction {
             var pos = dao.maxDayPosition(day) + 1
             val items = dao.templateExercisesOf(templateId).map {
-                DayExercise(epochDay = day, exerciseId = it.exerciseId, position = pos++, targetSets = it.targetSets, targetReps = it.targetReps)
+                DayExercise(epochDay = day, exerciseId = it.exerciseId, position = pos++, targetSets = it.targetSets, targetReps = it.targetReps, targetRepsMax = it.targetRepsMax)
             }
             dao.insertDayExercises(items)
         }
@@ -187,7 +202,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 g.sets.isNotEmpty() -> g.sets.groupingBy { it.reps }.eachCount().maxBy { it.value }.key
                 else -> 10
             }
-            DraftItem(newKey(), g.exercise.name, maxOf(g.sets.size, g.targetSets, 1), reps)
+            DraftItem(newKey(), g.exercise.name, maxOf(g.sets.size, g.targetSets, 1), reps, maxOf(reps, g.targetRepsMax))
         }
         saveTemplate(TemplateDraft(null, name, items))
     }
@@ -201,7 +216,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 TemplateWithItems(
                     t,
                     byTemplate[t.id].orEmpty().map {
-                        TemplateItem(names[it.exerciseId] ?: "?", it.targetSets, it.targetReps)
+                        TemplateItem(names[it.exerciseId] ?: "?", it.targetSets, it.targetReps, it.targetRepsMax)
                     }
                 )
             }
@@ -225,7 +240,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                         exerciseId = exerciseId(it.name),
                         position = i,
                         targetSets = it.sets,
-                        targetReps = it.reps
+                        targetReps = it.reps,
+                        targetRepsMax = if (it.repsMax > it.reps) it.repsMax else 0
                     )
                 })
             }

@@ -1,6 +1,7 @@
 package fi.ville.treenipaivakirja.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -67,7 +68,8 @@ data class TemplateExercise(
     val exerciseId: Long,
     val position: Int,
     val targetSets: Int,
-    val targetReps: Int
+    val targetReps: Int,                                   // toistohaarukan alaraja (tai kiinteä)
+    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0  // yläraja, 0 = ei haarukkaa
 )
 
 /** Päivälle suunniteltu/kirjattu liike (järjestys + tavoite). */
@@ -82,7 +84,8 @@ data class DayExercise(
     val exerciseId: Long,
     val position: Int,
     val targetSets: Int,
-    val targetReps: Int
+    val targetReps: Int,                                   // toistohaarukan alaraja (tai kiinteä)
+    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0  // yläraja, 0 = ei haarukkaa
 )
 
 @Dao
@@ -166,7 +169,7 @@ interface WorkoutDao {
     suspend fun deleteTemplate(templateId: Long)
 }
 
-/** Room-skeeman tarkat CREATE-lauseet. CI tarkistaa, että ne vastaavat Roomin generoimia. */
+/** Version 2 skeema (jäädytetty, tarkistettu CI:ssä v2-käännöksessä). Käytetään migraatiossa 1 -> 2. */
 object Schema2 {
     const val TEMPLATES =
         "CREATE TABLE IF NOT EXISTS `templates` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL)"
@@ -182,6 +185,25 @@ object Schema2 {
         "CREATE UNIQUE INDEX IF NOT EXISTS `index_day_exercises_epochDay_exerciseId` ON `day_exercises` (`epochDay`, `exerciseId`)"
     const val IDX_DE_EXERCISE =
         "CREATE INDEX IF NOT EXISTS `index_day_exercises_exerciseId` ON `day_exercises` (`exerciseId`)"
+}
+
+/**
+ * Roomin generoimat CREATE-lauseet nykyiselle skeemalle niille tauluille, joita migraatiot muuttavat.
+ * CI tarkistaa, että nämä vastaavat Roomia (ja siten että ALTER-lauseet tuottavat oikean skeeman).
+ */
+object SchemaCheck {
+    const val TEMPLATE_EXERCISES_V3 =
+        "CREATE TABLE IF NOT EXISTS `template_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `templateId` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`templateId`) REFERENCES `templates`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+    const val DAY_EXERCISES_V3 =
+        "CREATE TABLE IF NOT EXISTS `day_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+}
+
+/** v2 -> v3: toistohaarukan yläraja. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `template_exercises` ADD COLUMN `targetRepsMax` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `day_exercises` ADD COLUMN `targetRepsMax` INTEGER NOT NULL DEFAULT 0")
+    }
 }
 
 /** v1 -> v2: ohjelmat ja päivän liikkeet. Vanhat sarjat säilyvät. */
@@ -204,7 +226,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 
 @Database(
     entities = [Exercise::class, WorkoutSet::class, Template::class, TemplateExercise::class, DayExercise::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -219,7 +241,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "treenit.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }

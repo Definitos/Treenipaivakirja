@@ -81,4 +81,9 @@
     <string name="fmt_date_long">EEEE d.M.yyyy</string>
     <string name="fmt_date_short">d.M.</string>
     <string name="fmt_date_session">EEE d.M.yyyy</string>
+    <string name="reps_min">Toistot min</string>
+    <string name="reps_max">Toistot max</string>
+    <string name="go_heavier">Nosta painoa ensi kerralla</string>
+    <string name="save_set">Tallenna sarja</string>
+    <string name="target">Tavoite %1$s</string>
 </resources>

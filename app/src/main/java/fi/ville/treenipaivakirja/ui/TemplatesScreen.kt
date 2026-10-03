@@ -69,6 +69,7 @@ import fi.ville.treenipaivakirja.TemplateDraft
 import fi.ville.treenipaivakirja.TemplateWithItems
 import fi.ville.treenipaivakirja.WorkoutViewModel
 import fi.ville.treenipaivakirja.newKey
+import fi.ville.treenipaivakirja.repsRange
 
 @Composable
 fun TemplatesScreen(vm: WorkoutViewModel) {
@@ -113,7 +114,7 @@ fun TemplatesScreen(vm: WorkoutViewModel) {
                         editing = TemplateDraft(
                             id = t.template.id,
                             name = t.template.name,
-                            items = t.items.map { DraftItem(newKey(), it.exerciseName, it.targetSets, it.targetReps) }
+                            items = t.items.map { DraftItem(newKey(), it.exerciseName, it.targetSets, it.targetReps, maxOf(it.targetReps, it.targetRepsMax)) }
                         )
                     },
                     onDelete = { deleting = t }
@@ -191,7 +192,7 @@ fun TemplateCard(
         t.items.forEach { item ->
             Row(Modifier.padding(vertical = 2.dp, horizontal = 2.dp)) {
                 Text(item.exerciseName, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                Text("${item.targetSets} × ${item.targetReps}", color = Lime, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("${item.targetSets} × ${repsRange(item.targetReps, item.targetRepsMax)}", color = Lime, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(8.dp))
             }
         }
@@ -234,7 +235,7 @@ private fun TemplateEditor(
     fun addItem(n: String) {
         val clean = n.trim()
         if (clean.isEmpty()) return
-        items.add(DraftItem(newKey(), clean, 3, 10))
+        items.add(DraftItem(newKey(), clean, 3, 8, 10))
         newExercise = ""
     }
 
@@ -379,10 +380,25 @@ private fun EditorRow(
             }
             IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, stringResource(R.string.remove), tint = Muted) }
         }
-        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.padding(top = 4.dp)) {
             Stepper(stringResource(R.string.sets), item.sets, 1..10, Modifier.weight(1f)) { onChange(item.copy(sets = it)) }
-            Stepper(stringResource(R.string.reps), item.reps, 1..50, Modifier.weight(1f)) { onChange(item.copy(reps = it)) }
+            Spacer(Modifier.weight(1f).padding(end = 10.dp))
         }
+        Row(Modifier.padding(top = 8.dp)) {
+            // Alaraja: jos nousee ylärajan yli, yläraja seuraa mukana
+            Stepper(stringResource(R.string.reps_min), item.reps, 1..50, Modifier.weight(1f)) {
+                onChange(item.copy(reps = it, repsMax = maxOf(it, item.repsMax)))
+            }
+            Stepper(stringResource(R.string.reps_max), item.repsMax, 1..50, Modifier.weight(1f)) {
+                onChange(item.copy(repsMax = it, reps = minOf(it, item.reps)))
+            }
+        }
+        Text(
+            "${item.sets} × ${repsRange(item.reps, item.repsMax)}",
+            color = Muted,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 2.dp, top = 6.dp)
+        )
     }
 }
 

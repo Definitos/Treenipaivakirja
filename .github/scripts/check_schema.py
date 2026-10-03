@@ -6,7 +6,10 @@ if not impls:
     print("::error::AppDatabase_Impl not found"); sys.exit(1)
 impl = open(impls[0], encoding="utf-8").read()
 src = open("app/src/main/java/fi/ville/treenipaivakirja/data/Database.kt", encoding="utf-8").read()
-mine = re.findall(r'"(CREATE [^"]+)"', src)
+block = re.search(r"object SchemaCheck \{(.*?)\n\}", src, re.S)
+if not block:
+    print("::error::SchemaCheck object not found"); sys.exit(1)
+mine = re.findall(r'"(CREATE [^"]+)"', block.group(1))
 generated = re.findall(r'"(CREATE [^"]+)"', impl)
 missing = [s for s in mine if s not in generated]
 if missing:

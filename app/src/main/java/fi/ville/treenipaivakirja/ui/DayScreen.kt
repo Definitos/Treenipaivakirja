@@ -92,6 +92,13 @@ import fi.ville.treenipaivakirja.R
 import fi.ville.treenipaivakirja.WorkoutViewModel
 import fi.ville.treenipaivakirja.data.WorkoutSet
 import fi.ville.treenipaivakirja.epley
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.text.input.ImeAction
+import fi.ville.treenipaivakirja.repsRange
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
@@ -107,22 +114,6 @@ data class AddPrefill(
     val lockName: Boolean = false,
     val count: Int = 1
 )
-
-/** Esitäyttö: tämän päivän viimeisin sarja > tavoite > edellisen kerran vastaava sarja. */
-private fun prefillFor(g: ExerciseGroup, unit: WeightUnit): AddPrefill {
-    val last = g.sets.lastOrNull()
-    val prev = g.previous.getOrNull(g.sets.size) ?: g.previous.lastOrNull()
-    val reps = last?.reps ?: g.targetReps.takeIf { it > 0 } ?: prev?.reps
-    val weightKg = last?.weight ?: prev?.weight
-    val remaining = g.targetSets - g.sets.size
-    return AddPrefill(
-        name = g.exercise.name,
-        reps = reps?.toString() ?: "",
-        weight = weightKg?.let { editable(unit.fromKg(it)) } ?: "",
-        lockName = true,
-        count = if (remaining > 0) remaining else 1
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,7 +179,7 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
             items(groups, key = { it.exercise.id }) { g ->
                 ExerciseCard(
                     group = g,
-                    onAddSet = { dialog = prefillFor(g, unit) },
+                    onLog = { reps, kg -> vm.logSet(g.exercise.id, reps, kg) },
                     onRemove = { vm.removeExerciseFromDay(g.exercise.id) },
                     onDelete = { set ->
                         vm.deleteSet(set)
@@ -546,17 +537,45 @@ private fun EmptyDay() {
     }
 }
 
+/** Kirjaamattoman sarjarivin syötteet (paino valitussa yksikössä). */
+private data class PendingInput(val weight: String, val reps: String, val weightTouched: Boolean = false)
+
+private val Warn = Color(0xFFFFB04D)
+
 @Composable
 private fun ExerciseCard(
     group: ExerciseGroup,
-    onAddSet: () -> Unit,
+    onLog: (reps: Int, weightKg: Double) -> Unit,
     onRemove: () -> Unit,
     onDelete: (WorkoutSet) -> Unit
 ) {
+    val unit = LocalUnit.current
     val best = group.sets.maxByOrNull { epley(it.weight, it.reps) }
     var menu by remember { mutableStateOf(false) }
     val hasTarget = group.targetSets > 0
-    val done = hasTarget && group.sets.size >= group.targetSets
+    val logged = group.sets.size
+    val done = hasTarget && logged >= group.targetSets
+    val topReps = maxOf(group.targetReps, group.targetRepsMax)
+    val goHeavier = done && group.targetReps > 0 && group.sets.all { it.reps >= topReps }
+
+    // Kirjaamattomat sarjarivit: ohjelman jäljellä olevat + käyttäjän lisäämät
+    var extra by remember(group.exercise.id) { mutableIntStateOf(0) }
+    val pending = remember(group.exercise.id) { mutableStateMapOf<Int, PendingInput>() }
+    val slots = if (!hasTarget && logged == 0) maxOf(extra, 1) else maxOf(group.targetSets - logged, 0) + extra
+
+    /** Paino: tämän päivän viimeisin > edellisen kerran vastaava sarja > edellisen kerran viimeinen. */
+    fun initialFor(n: Int): PendingInput {
+        val kg = group.sets.lastOrNull()?.weight
+            ?: group.previous.getOrNull(n)?.weight
+            ?: group.previous.lastOrNull()?.weight
+        return PendingInput(weight = kg?.let { editable(unit.fromKg(it)) } ?: "", reps = "")
+    }
+
+    /** Toistokentän vihje: ohjelman haarukka tai edellisen kerran toistot. */
+    fun repsHint(n: Int): String = when {
+        group.targetReps > 0 -> repsRange(group.targetReps, group.targetRepsMax)
+        else -> group.previous.getOrNull(n)?.reps?.toString() ?: ""
+    }
 
     Column(
         Modifier
@@ -582,7 +601,7 @@ private fun ExerciseCard(
             )
             if (hasTarget) {
                 Text(
-                    "${group.sets.size}/${group.targetSets} × ${group.targetReps}",
+                    "$logged/${group.targetSets} × ${repsRange(group.targetReps, group.targetRepsMax)}",
                     color = if (done) Color.Black else Lime,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -617,21 +636,36 @@ private fun ExerciseCard(
             }
         }
         if (group.previous.isNotEmpty()) {
-            val unit = LocalUnit.current
             val prevText = group.previous.joinToString(" · ") { "${num(unit.fromKg(it.weight))}×${it.reps}" }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 14.dp, top = 2.dp)) {
                 Icon(Icons.Filled.History, null, tint = Muted, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(
-                    stringResource(R.string.last_time, prevText),
-                    color = Muted,
-                    fontSize = 12.sp,
-                    maxLines = 1
-                )
+                Text(stringResource(R.string.last_time, prevText), color = Muted, fontSize = 12.sp, maxLines = 1)
+            }
+        }
+        if (goHeavier) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(start = 14.dp, top = 6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Cyan.copy(alpha = 0.14f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Icon(Icons.Filled.ArrowUpward, null, tint = Cyan, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.go_heavier), color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         Spacer(Modifier.height(8.dp))
+
+        // Kirjatut sarjat
         group.sets.forEachIndexed { i, s ->
+            val repsColor = when {
+                group.targetReps > 0 && s.reps < group.targetReps -> Warn
+                group.targetReps > 0 && s.reps >= topReps -> Lime
+                else -> Muted
+            }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -642,9 +676,9 @@ private fun ExerciseCard(
                     Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(CardBg2),
+                        .background(AccentBrush),
                     contentAlignment = Alignment.Center
-                ) { Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted) }
+                ) { Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(16.dp)) }
                 Spacer(Modifier.width(12.dp))
                 Text(
                     wt(s.weight),
@@ -653,34 +687,113 @@ private fun ExerciseCard(
                     fontSize = 16.sp,
                     modifier = Modifier.weight(1f)
                 )
-                Text(stringResource(R.string.reps_count, s.reps), color = Muted, fontSize = 15.sp)
+                Text(stringResource(R.string.reps_count, s.reps), color = repsColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 IconButton(onClick = { onDelete(s) }) {
                     Icon(Icons.Outlined.Delete, stringResource(R.string.delete_set), tint = Muted, modifier = Modifier.size(20.dp))
                 }
             }
         }
-        if (group.sets.isEmpty()) {
-            Button(
-                onClick = onAddSet,
-                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 8.dp, top = 4.dp, bottom = 10.dp)
-            ) {
-                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.log_sets), fontWeight = FontWeight.Bold)
-            }
-        } else {
-            TextButton(onClick = onAddSet) {
-                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    stringResource(if (hasTarget && !done) R.string.log_next else R.string.add_set),
-                    fontWeight = FontWeight.SemiBold
+
+        // Kirjaamattomat sarjat: kg + toistot + ✓
+        repeat(slots) { j ->
+            val n = logged + j
+            key(n) {
+                val input = pending[n] ?: initialFor(n)
+                val hint = repsHint(n)
+                PendingSetRow(
+                    number = n + 1,
+                    input = input,
+                    unitLabel = unit.label,
+                    repsHint = hint,
+                    onChange = { pending[n] = it },
+                    onSave = { reps, weightInUnit ->
+                        onLog(reps, unit.toKg(weightInUnit))
+                        pending.remove(n)
+                        // Päivitä seuraavien koskemattomien rivien paino juuri käytettyyn
+                        for (k in n + 1 until logged + slots) {
+                            val cur = pending[k] ?: initialFor(k)
+                            if (!cur.weightTouched) pending[k] = cur.copy(weight = editable(weightInUnit))
+                        }
+                        if (hasTarget && n >= group.targetSets || !hasTarget) extra = maxOf(extra - 1, 0)
+                    }
                 )
             }
+        }
+
+        TextButton(onClick = { extra++ }) {
+            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.add_set), fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun PendingSetRow(
+    number: Int,
+    input: PendingInput,
+    unitLabel: String,
+    repsHint: String,
+    onChange: (PendingInput) -> Unit,
+    onSave: (reps: Int, weightInUnit: Double) -> Unit
+) {
+    val weight = parseDecimal(input.weight)
+    // Tyhjä toistokenttä hyväksytään, jos vihje on yksittäinen luku (esim. viime kerran toistot)
+    val reps = input.reps.toIntOrNull() ?: if (input.reps.isBlank()) repsHint.toIntOrNull() else null
+    val valid = weight != null && weight >= 0 && reps != null && reps > 0
+    val save = { if (valid) onSave(reps!!, weight!!) }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(CardBg2),
+            contentAlignment = Alignment.Center
+        ) { Text("$number", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted) }
+        Spacer(Modifier.width(10.dp))
+        OutlinedTextField(
+            value = input.weight,
+            onValueChange = { v ->
+                onChange(input.copy(weight = v.filter { it.isDigit() || it == ',' || it == '.' }, weightTouched = true))
+            },
+            suffix = { Text(unitLabel, fontSize = 13.sp) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.weight(1.1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedTextField(
+            value = input.reps,
+            onValueChange = { v -> onChange(input.copy(reps = v.filter { it.isDigit() })) },
+            placeholder = { Text(repsHint, color = Muted) },
+            suffix = { Text("×", fontSize = 13.sp) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { save() }),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .then(if (valid) Modifier.background(AccentBrush) else Modifier.background(CardBg2))
+                .clickable(enabled = valid, onClick = save),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Check,
+                stringResource(R.string.save_set),
+                tint = if (valid) Color.Black else Muted
+            )
         }
     }
 }
