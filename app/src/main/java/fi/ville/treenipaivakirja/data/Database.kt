@@ -91,6 +91,33 @@ data class DayExercise(
     @ColumnInfo(defaultValue = "0") val toFailure: Boolean = false // tavoite: uupumukseen asti
 )
 
+/** Kirjattu ruoka. Ravintoarvot tallennetaan kirjaushetken kopiona (per 100 g), joten kirjaus ei muutu lähteen mukana. */
+@Entity(tableName = "food_entries", indices = [Index("epochDay")])
+data class FoodEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    val meal: Int,                // 0-pohjainen aterian numero
+    val name: String,
+    val grams: Double,
+    val kcal100: Double,
+    val protein100: Double,
+    val carbs100: Double,
+    val fat100: Double,
+    val fineliId: Int? = null,    // null = oma ruoka
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** Käyttäjän oma ruoka, arvot per 100 g. */
+@Entity(tableName = "custom_foods", indices = [Index(value = ["name"], unique = true)])
+data class CustomFood(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val kcal100: Double,
+    val protein100: Double,
+    val carbs100: Double,
+    val fat100: Double
+)
+
 @Dao
 interface WorkoutDao {
     // ----- Liikkeet -----
@@ -176,6 +203,38 @@ interface WorkoutDao {
 
     @Query("DELETE FROM templates WHERE id = :templateId")
     suspend fun deleteTemplate(templateId: Long)
+
+    // ----- Ravinto -----
+    @Query("SELECT * FROM food_entries WHERE epochDay = :day ORDER BY meal, createdAt")
+    fun foodEntries(day: Long): Flow<List<FoodEntry>>
+
+    @Query("SELECT * FROM food_entries WHERE epochDay = :day ORDER BY meal, createdAt")
+    suspend fun foodEntriesOnce(day: Long): List<FoodEntry>
+
+    @Query("SELECT DISTINCT epochDay FROM food_entries")
+    fun foodDays(): Flow<List<Long>>
+
+    /** Viimeksi kirjatut ruoat (uusin ensin), yksi rivi per nimi. */
+    @Query("SELECT * FROM food_entries WHERE id IN (SELECT MAX(id) FROM food_entries GROUP BY name) ORDER BY createdAt DESC LIMIT 30")
+    fun recentFoods(): Flow<List<FoodEntry>>
+
+    @Insert
+    suspend fun insertFoodEntry(entry: FoodEntry): Long
+
+    @Update
+    suspend fun updateFoodEntry(entry: FoodEntry)
+
+    @Delete
+    suspend fun deleteFoodEntry(entry: FoodEntry)
+
+    @Query("SELECT * FROM custom_foods ORDER BY name COLLATE NOCASE")
+    fun customFoods(): Flow<List<CustomFood>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCustomFood(food: CustomFood): Long
+
+    @Delete
+    suspend fun deleteCustomFood(food: CustomFood)
 }
 
 /** Version 2 skeema (jäädytetty, tarkistettu CI:ssä v2-käännöksessä). Käytetään migraatiossa 1 -> 2. */
@@ -201,12 +260,30 @@ object Schema2 {
  * CI tarkistaa, että nämä vastaavat Roomia (ja siten että ALTER-lauseet tuottavat oikean skeeman).
  */
 object SchemaCheck {
+    const val FOOD_ENTRIES_V5 =
+        "CREATE TABLE IF NOT EXISTS `food_entries` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `meal` INTEGER NOT NULL, `name` TEXT NOT NULL, `grams` REAL NOT NULL, `kcal100` REAL NOT NULL, `protein100` REAL NOT NULL, `carbs100` REAL NOT NULL, `fat100` REAL NOT NULL, `fineliId` INTEGER, `createdAt` INTEGER NOT NULL)"
+    const val IDX_FOOD_ENTRIES_DAY_V5 =
+        "CREATE INDEX IF NOT EXISTS `index_food_entries_epochDay` ON `food_entries` (`epochDay`)"
+    const val CUSTOM_FOODS_V5 =
+        "CREATE TABLE IF NOT EXISTS `custom_foods` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `kcal100` REAL NOT NULL, `protein100` REAL NOT NULL, `carbs100` REAL NOT NULL, `fat100` REAL NOT NULL)"
+    const val IDX_CUSTOM_FOODS_NAME_V5 =
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_custom_foods_name` ON `custom_foods` (`name`)"
     const val EXERCISES_V4 =
         "CREATE TABLE IF NOT EXISTS `exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `note` TEXT)"
     const val TEMPLATE_EXERCISES_V4 =
         "CREATE TABLE IF NOT EXISTS `template_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `templateId` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, `toFailure` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`templateId`) REFERENCES `templates`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
     const val DAY_EXERCISES_V4 =
         "CREATE TABLE IF NOT EXISTS `day_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, `toFailure` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+}
+
+/** v4 -> v5: ravintopäiväkirja (kirjatut ruoat ja omat ruoat). */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(SchemaCheck.FOOD_ENTRIES_V5)
+        db.execSQL(SchemaCheck.IDX_FOOD_ENTRIES_DAY_V5)
+        db.execSQL(SchemaCheck.CUSTOM_FOODS_V5)
+        db.execSQL(SchemaCheck.IDX_CUSTOM_FOODS_NAME_V5)
+    }
 }
 
 /** v3 -> v4: liikkeen muistiinpano ja failure-tavoite. */
@@ -245,8 +322,8 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 }
 
 @Database(
-    entities = [Exercise::class, WorkoutSet::class, Template::class, TemplateExercise::class, DayExercise::class],
-    version = 4,
+    entities = [Exercise::class, WorkoutSet::class, Template::class, TemplateExercise::class, DayExercise::class, FoodEntry::class, CustomFood::class],
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -261,7 +338,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "treenit.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
     }
 }

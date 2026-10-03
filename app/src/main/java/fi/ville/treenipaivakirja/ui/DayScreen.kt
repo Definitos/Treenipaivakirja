@@ -390,6 +390,7 @@ private fun SettingsDialog(
                     )
                     Text(stringResource(R.string.version, version), color = Muted, fontSize = 12.sp)
                     Text(stringResource(R.string.copyright), color = Muted, fontSize = 12.sp, textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.fineli_settings), color = Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
                 }
             }
         },

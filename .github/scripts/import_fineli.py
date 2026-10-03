@@ -4,7 +4,8 @@ Käyttö: python3 .github/scripts/import_fineli.py Fineli_RelXX_....zip [muita.z
 Paketti ladataan selaimella: https://fineli.fi/fineli/fi/avoin-data
 
 Tuottaa:
-  app/src/main/assets/fineli.csv       id;nimi_fi;nimi_en;kcal;proteiini;hiilihydraatti;rasva  (per 100 g)
+  app/src/main/assets/fineli.csv       id;nimi_fi;nimi_en;kcal;proteiini;hiilihydraatti;rasva;mitat  (per 100 g)
+                                       mitat = ruokamitat grammoina, esim. "KPL_M:60,PORTM:150"
   app/src/main/assets/fineli_info.txt  julkaisun nimi ja hakupäivä (näytetään asetuksissa)
 """
 import csv, datetime, io, sys, zipfile
@@ -54,6 +55,13 @@ def num(s):
 
 def main():
     z, label = find_package(sys.argv[1:])
+    release = label
+    for n in z.namelist():
+        if n.lower().endswith("descript.txt"):
+            import re
+            m = re.search(r"Release\.?\s*([0-9.]+)", z.read(n).decode("cp1252", "replace"))
+            if m:
+                release = f"Fineli Release {m.group(1)}"
     foods = read_csv(z, "food.csv")
     names_fi = {r["FOODID"]: r["FOODNAME"].strip() for r in foods}
     names_en = {}
@@ -70,14 +78,29 @@ def main():
         if code in want:
             vals.setdefault(r["FOODID"], {})[want[code]] = num(r.get("BESTLOC"))
 
+    units = {}
+    keep = ["KPL_S", "KPL_M", "KPL_L", "KPL_VALM", "PORTS", "PORTM", "PORTL", "DL", "RKL", "TL"]
+    for r in read_csv(z, "foodaddunit.csv"):
+        code = r.get("FOODUNIT", "").strip().upper()
+        mass = num(r.get("MASS"))
+        if code in keep and mass > 0:
+            units.setdefault(r["FOODID"], {})[code] = mass
+
+    def nice(name):
+        """SOKERI, FRUKTOOSI -> Sokeri, fruktoosi"""
+        name = name.strip().lower()
+        return name[:1].upper() + name[1:]
+
     out = []
     for fid, name in names_fi.items():
         v = vals.get(fid)
         if not v or "kj" not in v:
             continue
         kcal = v["kj"] / 4.184
-        out.append([fid, name.replace(";", ","), names_en.get(fid, "").replace(";", ","),
-                    f"{kcal:.1f}", f"{v.get('p', 0):.1f}", f"{v.get('c', 0):.1f}", f"{v.get('f', 0):.1f}"])
+        u = units.get(fid, {})
+        ustr = ",".join(f"{c}:{u[c]:g}" for c in keep if c in u)
+        out.append([fid, nice(name).replace(";", ","), nice(names_en.get(fid, "")).replace(";", ","),
+                    f"{kcal:.1f}", f"{v.get('p', 0):.1f}", f"{v.get('c', 0):.1f}", f"{v.get('f', 0):.1f}", ustr])
     if len(out) < 1000:
         sys.exit(f"::error::Liian vähän ruokia ({len(out)})")
 
@@ -85,7 +108,7 @@ def main():
         w = csv.writer(fh, delimiter=";", lineterminator="\n")
         w.writerows(out)
     with open(INFO, "w", encoding="utf-8") as fh:
-        fh.write(f"{label}\n{datetime.date.today().isoformat()}\n")
+        fh.write(f"{release}\n{datetime.date.today().isoformat()}\n")
     print(f"Wrote {len(out)} foods from {label}")
     for row in out[:5]:
         print(row)

@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -30,7 +30,9 @@ jobs:
         with:
           name: Treenipaivakirja-apk
           path: Treenipaivakirja.apk
+      # Julkaisu (ja puhelimen päivitysilmoitus) vain main-haarasta
       - name: Publish release (direct download link)
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
