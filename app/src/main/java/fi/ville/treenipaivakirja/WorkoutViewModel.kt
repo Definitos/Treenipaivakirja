@@ -97,6 +97,30 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("unit", u.name).apply()
     }
 
+    // ---------- Päivitykset ----------
+    private val currentRun = runCatching { UpdateChecker.currentRun(app) }.getOrDefault(Int.MAX_VALUE)
+    val updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    /** Käynnistyksen ilmoitus suljettu tämän istunnon ajaksi. */
+    val updatePromptDismissed = MutableStateFlow(false)
+
+    fun checkUpdates(manual: Boolean = false) {
+        if (updateState.value is UpdateState.Checking) return
+        if (manual) updatePromptDismissed.value = false
+        updateState.value = UpdateState.Checking
+        viewModelScope.launch {
+            updateState.value = try {
+                val info = UpdateChecker.fetchLatest()
+                if (info.runNumber > currentRun) UpdateState.Available(info) else UpdateState.UpToDate
+            } catch (e: Exception) {
+                UpdateState.Error
+            }
+        }
+    }
+
+    init {
+        checkUpdates()
+    }
+
     // ---------- Päivänäkymä ----------
     val selectedDay = MutableStateFlow(LocalDate.now())
 

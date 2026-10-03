@@ -41,6 +41,7 @@ import fi.ville.treenipaivakirja.ui.Lime
 import fi.ville.treenipaivakirja.ui.Muted
 import fi.ville.treenipaivakirja.ui.TemplatesScreen
 import fi.ville.treenipaivakirja.ui.TreeniTheme
+import fi.ville.treenipaivakirja.ui.UpdateDialog
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +56,17 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val unit by vm.unit.collectAsStateWithLifecycle()
+    val update by vm.updateState.collectAsStateWithLifecycle()
+    val updateDismissed by vm.updatePromptDismissed.collectAsStateWithLifecycle()
+
+    val available = update as? UpdateState.Available
+    if (available != null && !updateDismissed) {
+        UpdateDialog(
+            info = available.info,
+            onDownload = { vm.updatePromptDismissed.value = true },
+            onLater = { vm.updatePromptDismissed.value = true }
+        )
+    }
 
     val itemColors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.Black,

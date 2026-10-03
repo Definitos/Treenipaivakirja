@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fi.ville.treenipaivakirja.ExerciseGroup
 import fi.ville.treenipaivakirja.R
+import fi.ville.treenipaivakirja.UpdateState
 import fi.ville.treenipaivakirja.WorkoutViewModel
 import fi.ville.treenipaivakirja.data.WorkoutSet
 import fi.ville.treenipaivakirja.epley
@@ -299,9 +300,12 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
     }
 
     if (showSettings) {
+        val update by vm.updateState.collectAsStateWithLifecycle()
         SettingsDialog(
             unit = unit,
             onUnit = vm::setUnit,
+            update = update,
+            onCheckUpdates = { vm.checkUpdates(manual = true) },
             onDismiss = { showSettings = false }
         )
     }
@@ -328,7 +332,13 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
 }
 
 @Composable
-private fun SettingsDialog(unit: WeightUnit, onUnit: (WeightUnit) -> Unit, onDismiss: () -> Unit) {
+private fun SettingsDialog(
+    unit: WeightUnit,
+    onUnit: (WeightUnit) -> Unit,
+    update: UpdateState,
+    onCheckUpdates: () -> Unit,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -362,6 +372,8 @@ private fun SettingsDialog(unit: WeightUnit, onUnit: (WeightUnit) -> Unit, onDis
                         )
                     }) { Text(stringResource(R.string.change_language), color = Color.White) }
                 }
+                Spacer(Modifier.height(6.dp))
+                UpdateSection(update, onCheckUpdates)
                 HorizontalDivider(color = CardBg2, modifier = Modifier.padding(top = 8.dp))
                 val version = remember {
                     runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }

@@ -88,4 +88,13 @@
     <string name="target">Target %1$s</string>
     <string name="version">Version %1$s</string>
     <string name="copyright">© 2026 Definitos. All rights reserved.</string>
+    <string name="update_title">Update available</string>
+    <string name="update_body">Version %1$s is available (you have %2$s). Download the file and open it to install. Your workouts are kept.</string>
+    <string name="download">Download</string>
+    <string name="later">Later</string>
+    <string name="check_updates">Check for updates</string>
+    <string name="checking">Checking…</string>
+    <string name="up_to_date">You have the latest version</string>
+    <string name="update_error">Couldn’t check for updates. Check your connection.</string>
+    <string name="download_version">Download version %1$s</string>
 </resources>

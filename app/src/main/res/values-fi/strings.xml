@@ -88,4 +88,13 @@
     <string name="target">Tavoite %1$s</string>
     <string name="version">Versio %1$s</string>
     <string name="copyright">© 2026 Definitos. Kaikki oikeudet pidätetään.</string>
+    <string name="update_title">Päivitys saatavilla</string>
+    <string name="update_body">Versio %1$s on saatavilla (sinulla on %2$s). Lataa tiedosto ja avaa se asentaaksesi. Treenisi säilyvät.</string>
+    <string name="download">Lataa</string>
+    <string name="later">Myöhemmin</string>
+    <string name="check_updates">Tarkista päivitykset</string>
+    <string name="checking">Tarkistetaan…</string>
+    <string name="up_to_date">Sinulla on uusin versio</string>
+    <string name="update_error">Päivitysten tarkistus epäonnistui. Tarkista nettiyhteys.</string>
+    <string name="download_version">Lataa versio %1$s</string>
 </resources>
