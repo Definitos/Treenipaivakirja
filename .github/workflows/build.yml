@@ -21,7 +21,12 @@ jobs:
       - name: Build debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          set -o pipefail
+          # Käännösvirheet näkyviin annotaatioina (e: ...)
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log || {
+            grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -60 | sed 's/^/::error::/'
+            exit 1
+          }
       - name: Check migration SQL
         run: python3 .github/scripts/check_schema.py
       - name: Rename APK
