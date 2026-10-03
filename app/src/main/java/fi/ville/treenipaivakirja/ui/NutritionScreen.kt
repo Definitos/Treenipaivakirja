@@ -64,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -90,6 +91,8 @@ import fi.ville.treenipaivakirja.KCAL_FAT
 import fi.ville.treenipaivakirja.KCAL_PROTEIN
 import fi.ville.treenipaivakirja.Macros
 import fi.ville.treenipaivakirja.MealGroup
+import fi.ville.treenipaivakirja.MealKind
+import fi.ville.treenipaivakirja.Suggestion
 import fi.ville.treenipaivakirja.NutritionProfile
 import fi.ville.treenipaivakirja.NutritionViewModel
 import fi.ville.treenipaivakirja.R
@@ -215,9 +218,22 @@ fun NutritionScreen(
     }
 
     pickerMeal?.let { meal ->
+        // Aterian jäljellä oleva tavoite ehdotuksia varten
+        val remaining = targets?.perMeal?.let { pm ->
+            val eaten = meals.getOrNull(meal)?.total ?: Macros.ZERO
+            Macros(
+                (pm.kcal - eaten.kcal).coerceAtLeast(0.0), (pm.protein - eaten.protein).coerceAtLeast(0.0),
+                (pm.carbs - eaten.carbs).coerceAtLeast(0.0), (pm.fat - eaten.fat).coerceAtLeast(0.0)
+            )
+        }
         FoodPickerSheet(
             nvm = nvm,
             meal = meal,
+            remaining = remaining,
+            onSuggestionAdded = {
+                pickerMeal = null
+                scope.launch { snackbar.showSnackbar(context.getString(R.string.suggestion_added)) }
+            },
             onDismiss = { pickerMeal = null },
             onAdded = { name ->
                 pickerMeal = null
@@ -488,6 +504,8 @@ private fun MacroLine(m: Macros, size: Int) {
 private fun FoodPickerSheet(
     nvm: NutritionViewModel,
     meal: Int,
+    remaining: Macros?,
+    onSuggestionAdded: () -> Unit,
     onDismiss: () -> Unit,
     onAdded: (String) -> Unit
 ) {
@@ -501,6 +519,11 @@ private fun FoodPickerSheet(
     var chosen by remember { mutableStateOf<FoodItem?>(null) }
     var customDialog by remember { mutableStateOf<CustomFood?>(null) }
     val results = remember(query, custom, hasFineli) { nvm.search(query, finnish) }
+    var kind by remember { mutableStateOf<MealKind?>(null) }
+    var shown by remember { mutableIntStateOf(3) }
+    val suggestions by produceState(emptyList<Suggestion>(), remaining, kind, hasFineli) {
+        value = if (remaining == null || remaining.kcal < 80) emptyList() else nvm.suggestions(remaining, kind)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -535,6 +558,30 @@ private fun FoodPickerSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (query.isBlank()) {
+                    if (hasFineli) {
+                        item {
+                            SuggestionsHeader(kind) { kind = it; shown = 3 }
+                        }
+                        when {
+                            remaining == null -> item { Text(stringResource(R.string.suggestions_need_goals), color = Muted, fontSize = 13.sp) }
+                            remaining.kcal < 80 -> item { Text(stringResource(R.string.suggestions_meal_full), color = Muted, fontSize = 13.sp) }
+                            else -> {
+                                items(suggestions.take(shown), key = { "s" + it.combo.key }) { sg ->
+                                    SuggestionCard(sg, remaining) {
+                                        nvm.addSuggestion(sg, meal)
+                                        onSuggestionAdded()
+                                    }
+                                }
+                                if (suggestions.size > shown) {
+                                    item {
+                                        TextButton(onClick = { shown += 3 }, modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.more_suggestions), color = Cyan)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (recent.isNotEmpty()) {
                         item { SectionLabel(stringResource(R.string.recent_foods)) }
                         items(recent, key = { "r" + it.name }) { FoodRow(it) { chosen = it } }
@@ -619,6 +666,57 @@ private fun FoodPickerSheet(
                 customDialog = null
             }) else null
         )
+    }
+}
+
+@Composable
+private fun SuggestionsHeader(kind: MealKind?, onKind: (MealKind?) -> Unit) {
+    Column {
+        SectionLabel(stringResource(R.string.suggestions))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(kind == null, { onKind(null) }, { Text(stringResource(R.string.kind_all), fontSize = 12.sp) }, colors = chipColors())
+            MealKind.entries.forEach { k ->
+                FilterChip(kind == k, { onKind(k) }, { Text(stringResource(k.labelRes), fontSize = 12.sp) }, colors = chipColors())
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestionCard(s: Suggestion, target: Macros, onAdd: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(CardBg)
+            .border(1.dp, CardBg2, shape)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        s.parts.forEach { p ->
+            Row {
+                Text(stringResource(p.part.labelRes), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                val pieces = if (p.part.piece) " (${(p.grams / p.part.step).roundToInt()} ${stringResource(R.string.pcs)})" else ""
+                Text("${num(p.grams)} g$pieces", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${kcal(s.total.kcal)} kcal", color = Lime, fontWeight = FontWeight.Bold)
+                MacroLine(s.total, 12)
+                Text(
+                    stringResource(R.string.suggestion_vs_target, kcal(target.kcal), g(target.protein), g(target.carbs), g(target.fat)),
+                    color = Muted, fontSize = 11.sp
+                )
+            }
+            Button(
+                onClick = onAdd,
+                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black),
+                contentPadding = PaddingValues(horizontal = 14.dp)
+            ) { Text(stringResource(R.string.add), fontWeight = FontWeight.Bold) }
+        }
     }
 }
 

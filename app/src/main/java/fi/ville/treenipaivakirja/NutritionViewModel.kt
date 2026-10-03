@@ -163,6 +163,31 @@ class NutritionViewModel(app: Application) : AndroidViewModel(app) {
 
     val hasFineli: StateFlow<Boolean> = fineli.map { it.isNotEmpty() }.state(false)
 
+    /** Ateriaehdotukset tavoitteelle (raskas laskenta, kutsutaan taustasäikeessä). */
+    suspend fun suggestions(target: Macros, kind: MealKind?): List<Suggestion> = withContext(Dispatchers.Default) {
+        val map = fineli.value.associate { it.id to Macros(it.kcal, it.p, it.c, it.f) }
+        if (map.isEmpty()) emptyList() else suggestMeals(target, map, kind)
+    }
+
+    /** Lisää ehdotuksen kaikki osat ateriaan omina kirjauksinaan. */
+    fun addSuggestion(s: Suggestion, meal: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            s.parts.forEachIndexed { i, p ->
+                dao.insertFoodEntry(
+                    FoodEntry(
+                        epochDay = selectedDay.value.toEpochDay(), meal = meal,
+                        name = app.getString(p.part.labelRes), grams = p.grams,
+                        kcal100 = p.per100.kcal, protein100 = p.per100.protein,
+                        carbs100 = p.per100.carbs, fat100 = p.per100.fat,
+                        fineliId = p.part.fineliId, createdAt = now + i
+                    )
+                )
+            }
+        }
+    }
+
     val customFoods: StateFlow<List<CustomFood>> = dao.customFoods().state(emptyList())
 
     val recentFoods: StateFlow<List<FoodItem>> = combine(dao.recentFoods(), fineli) { list, rows ->
