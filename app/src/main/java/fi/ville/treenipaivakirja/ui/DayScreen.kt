@@ -1,0 +1,514 @@
+package fi.ville.treenipaivakirja.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import fi.ville.treenipaivakirja.ExerciseGroup
+import fi.ville.treenipaivakirja.WorkoutViewModel
+import fi.ville.treenipaivakirja.data.WorkoutSet
+import fi.ville.treenipaivakirja.epley
+import kotlinx.coroutines.launch
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.TextStyle as DayNameStyle
+
+/** Lisäysdialogin esitäytöt. lockName = lisätään sarja jo olemassa olevaan liikkeeseen. */
+data class AddPrefill(
+    val name: String = "",
+    val reps: String = "",
+    val weight: String = "",
+    val lockName: Boolean = false
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
+    val day by vm.selectedDay.collectAsStateWithLifecycle()
+    val groups by vm.dayGroups.collectAsStateWithLifecycle()
+    val trainingDays by vm.trainingDays.collectAsStateWithLifecycle()
+    val exercises by vm.exercises.collectAsStateWithLifecycle()
+
+    var dialog by remember { mutableStateOf<AddPrefill?>(null) }
+    var showPicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                DayHeader(
+                    day = day,
+                    onPrev = { vm.selectedDay.value = day.minusDays(1) },
+                    onNext = { vm.selectedDay.value = day.plusDays(1) },
+                    onToday = { vm.selectedDay.value = LocalDate.now() },
+                    onPick = { showPicker = true }
+                )
+            }
+            item { WeekStrip(day, trainingDays) { vm.selectedDay.value = it } }
+            item { SummaryCard(groups) }
+            if (groups.isEmpty()) item { EmptyDay() }
+            items(groups, key = { it.exercise.id }) { g ->
+                ExerciseCard(
+                    group = g,
+                    onAddSet = {
+                        val last = g.sets.last()
+                        dialog = AddPrefill(
+                            name = g.exercise.name,
+                            reps = last.reps.toString(),
+                            weight = editable(last.weight),
+                            lockName = true
+                        )
+                    },
+                    onDelete = { set ->
+                        vm.deleteSet(set)
+                        scope.launch {
+                            val r = snackbar.showSnackbar(
+                                message = "Sarja poistettu",
+                                actionLabel = "Kumoa",
+                                duration = SnackbarDuration.Short
+                            )
+                            if (r == SnackbarResult.ActionPerformed) vm.restoreSet(set)
+                        }
+                    }
+                )
+            }
+        }
+
+        ExtendedFloatingActionButton(
+            onClick = { dialog = AddPrefill() },
+            containerColor = Lime,
+            contentColor = Color.Black,
+            shape = RoundedCornerShape(18.dp),
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            text = { Text("Lisää liike", fontWeight = FontWeight.Bold) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        )
+    }
+
+    dialog?.let { prefill ->
+        AddSetDialog(
+            prefill = prefill,
+            allNames = exercises.map { it.name },
+            onDismiss = { dialog = null },
+            onSave = { name, reps, weight, count ->
+                vm.addSets(name, reps, weight, count)
+                dialog = null
+            }
+        )
+    }
+
+    if (showPicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let {
+                        vm.selectedDay.value = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                    }
+                    showPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Peruuta") } }
+        ) { DatePicker(state = state) }
+    }
+}
+
+@Composable
+private fun DayHeader(
+    day: LocalDate,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onToday: () -> Unit,
+    onPick: () -> Unit
+) {
+    val today = LocalDate.now()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            val top = when (day) {
+                today -> "Tänään"
+                today.minusDays(1) -> "Eilen"
+                else -> "Palaa tähän päivään ›"
+            }
+            Text(
+                top,
+                color = Lime,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = if (day != today) Modifier.clickable(onClick = onToday) else Modifier
+            )
+            Text(
+                day.fiLong(),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                modifier = Modifier.clickable(onClick = onPick)
+            )
+        }
+        RoundIcon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Edellinen päivä", onPrev)
+        Spacer(Modifier.width(6.dp))
+        RoundIcon(Icons.Filled.CalendarMonth, "Valitse päivä", onPick)
+        Spacer(Modifier.width(6.dp))
+        RoundIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Seuraava päivä", onNext)
+    }
+}
+
+@Composable
+private fun RoundIcon(icon: ImageVector, desc: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(CardBg2)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, contentDescription = desc, tint = Color.White, modifier = Modifier.size(22.dp)) }
+}
+
+@Composable
+private fun WeekStrip(day: LocalDate, trainingDays: Set<Long>, onSelect: (LocalDate) -> Unit) {
+    val monday = day.with(DayOfWeek.MONDAY)
+    val today = LocalDate.now()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (i in 0..6) {
+            val d = monday.plusDays(i.toLong())
+            val selected = d == day
+            val bg = if (selected) Modifier.background(AccentBrush) else Modifier.background(CardBg)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .then(bg)
+                    .clickable { onSelect(d) }
+                    .padding(vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    d.dayOfWeek.getDisplayName(DayNameStyle.SHORT, FI),
+                    fontSize = 12.sp,
+                    color = if (selected) Color.Black else Muted
+                )
+                Text(
+                    d.dayOfMonth.toString(),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        selected -> Color.Black
+                        d == today -> Lime
+                        else -> Color.White
+                    }
+                )
+                Spacer(Modifier.height(4.dp))
+                val trained = trainingDays.contains(d.toEpochDay())
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                !trained -> Color.Transparent
+                                selected -> Color.Black
+                                else -> Lime
+                            }
+                        )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(groups: List<ExerciseGroup>) {
+    val setCount = groups.sumOf { it.sets.size }
+    val volume = groups.sumOf { g -> g.sets.sumOf { it.weight * it.reps } }
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(CardBg)
+            .border(1.dp, AccentBrush, shape)
+            .padding(vertical = 18.dp)
+    ) {
+        BigStat("Liikkeet", groups.size.toString(), Modifier.weight(1f))
+        BigStat("Sarjat", setCount.toString(), Modifier.weight(1f))
+        BigStat("Volyymi", "${num(volume)} kg", Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun BigStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleLarge.copy(brush = AccentBrush),
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1
+        )
+        Text(label, color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun EmptyDay() {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(CardBg)
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(Icons.Filled.FitnessCenter, null, tint = Lime, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("Ei treenejä tälle päivälle", fontWeight = FontWeight.Bold, color = Color.White)
+        Text(
+            "Paina \"Lisää liike\" ja kirjaa ensimmäinen sarja.",
+            color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun ExerciseCard(
+    group: ExerciseGroup,
+    onAddSet: () -> Unit,
+    onDelete: (WorkoutSet) -> Unit
+) {
+    val best = group.sets.maxByOrNull { epley(it.weight, it.reps) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(CardBg)
+            .padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(width = 4.dp, height = 22.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(AccentBrush)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                group.exercise.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+            best?.let {
+                Text(
+                    "${num(it.weight)} kg × ${it.reps}",
+                    color = Lime,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Lime.copy(alpha = 0.12f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        group.sets.forEachIndexed { i, s ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(CardBg2),
+                    contentAlignment = Alignment.Center
+                ) { Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Muted) }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "${num(s.weight)} kg",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("${s.reps} toistoa", color = Muted, fontSize = 15.sp)
+                IconButton(onClick = { onDelete(s) }) {
+                    Icon(Icons.Outlined.Delete, "Poista sarja", tint = Muted, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+        TextButton(onClick = onAddSet) {
+            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Lisää sarja", fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun AddSetDialog(
+    prefill: AddPrefill,
+    allNames: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (name: String, reps: Int, weight: Double, count: Int) -> Unit
+) {
+    var name by remember { mutableStateOf(prefill.name) }
+    var reps by remember { mutableStateOf(prefill.reps) }
+    var weight by remember { mutableStateOf(prefill.weight) }
+    var count by remember { mutableIntStateOf(1) }
+
+    val repsInt = reps.toIntOrNull()
+    val weightD = weight.replace(',', '.').toDoubleOrNull()
+    val valid = name.isNotBlank() && repsInt != null && repsInt > 0 && weightD != null && weightD >= 0
+
+    val suggestions = remember(name, allNames) {
+        val q = name.trim()
+        allNames.filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(8)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBg,
+        title = {
+            Text(
+                if (prefill.lockName) prefill.name else "Lisää liike",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!prefill.lockName) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Liike") },
+                        placeholder = { Text("esim. Penkkipunnerrus") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (suggestions.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(suggestions) { s ->
+                                AssistChip(onClick = { name = s }, label = { Text(s) })
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = { v -> weight = v.filter { it.isDigit() || it == ',' || it == '.' } },
+                        label = { Text("Kilot") },
+                        suffix = { Text("kg") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = reps,
+                        onValueChange = { v -> reps = v.filter { it.isDigit() } },
+                        label = { Text("Toistot") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sarjoja", color = Color.White, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { if (count > 1) count-- }) {
+                        Icon(Icons.Filled.Remove, "Vähemmän")
+                    }
+                    Text("$count", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                    IconButton(onClick = { if (count < 10) count++ }) {
+                        Icon(Icons.Filled.Add, "Enemmän")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (valid) onSave(name, repsInt!!, weightD!!, count) },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black)
+            ) { Text("Tallenna", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Peruuta") } }
+    )
+}
