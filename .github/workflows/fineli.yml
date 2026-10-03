@@ -1,0 +1,28 @@
+name: Update Fineli data
+
+# Päivittää ruokalistan Finelin avoimesta datasta (THL, CC BY 4.0).
+# Ajetaan käsin (Actions → Update Fineli data → Run) tai kun hakuskripti muuttuu.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/scripts/fetch_fineli.py
+
+permissions:
+  contents: write
+
+jobs:
+  fineli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch Fineli
+        run: python3 .github/scripts/fetch_fineli.py
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/assets/fineli.csv app/src/main/assets/fineli_info.txt
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Fineli-data päivitetty"
+          git push
