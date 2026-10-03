@@ -205,6 +205,7 @@ private fun MiniStat(label: String, value: String, modifier: Modifier, trophy: B
 @Composable
 private fun SessionRow(s: DayStat, metric: Metric) {
     val unit = LocalUnit.current
+    val failShort = stringResource(R.string.failure_short)
     Row(
         Modifier
             .fillMaxWidth()
@@ -220,7 +221,7 @@ private fun SessionRow(s: DayStat, metric: Metric) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                s.sets.joinToString("  ·  ") { "${num(unit.fromKg(it.weight))}×${it.reps}" },
+                s.sets.joinToString("  ·  ") { "${num(unit.fromKg(it.weight))}×${if (it.reps == 0) failShort else it.reps}" },
                 color = Muted,
                 fontSize = 13.sp
             )

@@ -39,6 +39,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -114,7 +116,7 @@ fun TemplatesScreen(vm: WorkoutViewModel) {
                         editing = TemplateDraft(
                             id = t.template.id,
                             name = t.template.name,
-                            items = t.items.map { DraftItem(newKey(), it.exerciseName, it.targetSets, it.targetReps, maxOf(it.targetReps, it.targetRepsMax)) }
+                            items = t.items.map { DraftItem(newKey(), it.exerciseName, it.targetSets, it.targetReps, maxOf(it.targetReps, it.targetRepsMax), it.toFailure) }
                         )
                     },
                     onDelete = { deleting = t }
@@ -192,7 +194,7 @@ fun TemplateCard(
         t.items.forEach { item ->
             Row(Modifier.padding(vertical = 2.dp, horizontal = 2.dp)) {
                 Text(item.exerciseName, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                Text("${item.targetSets} × ${repsRange(item.targetReps, item.targetRepsMax)}", color = Lime, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("${item.targetSets} × " + if (item.toFailure) stringResource(R.string.failure) else repsRange(item.targetReps, item.targetRepsMax), color = Lime, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(8.dp))
             }
         }
@@ -380,21 +382,35 @@ private fun EditorRow(
             }
             IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, stringResource(R.string.remove), tint = Muted) }
         }
-        Row(Modifier.padding(top = 4.dp)) {
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Stepper(stringResource(R.string.sets), item.sets, 1..10, Modifier.weight(1f)) { onChange(item.copy(sets = it)) }
-            Spacer(Modifier.weight(1f).padding(end = 10.dp))
+            FilterChip(
+                selected = item.toFailure,
+                onClick = { onChange(item.copy(toFailure = !item.toFailure)) },
+                label = { Text(stringResource(R.string.to_failure)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Cyan,
+                    selectedLabelColor = Color.Black,
+                    labelColor = Color.White
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 10.dp)
+            )
         }
-        Row(Modifier.padding(top = 8.dp)) {
-            // Alaraja: jos nousee ylärajan yli, yläraja seuraa mukana
-            Stepper(stringResource(R.string.reps_min), item.reps, 1..50, Modifier.weight(1f)) {
-                onChange(item.copy(reps = it, repsMax = maxOf(it, item.repsMax)))
-            }
-            Stepper(stringResource(R.string.reps_max), item.repsMax, 1..50, Modifier.weight(1f)) {
-                onChange(item.copy(repsMax = it, reps = minOf(it, item.reps)))
+        if (!item.toFailure) {
+            Row(Modifier.padding(top = 8.dp)) {
+                // Alaraja: jos nousee ylärajan yli, yläraja seuraa mukana
+                Stepper(stringResource(R.string.reps_min), item.reps, 1..50, Modifier.weight(1f)) {
+                    onChange(item.copy(reps = it, repsMax = maxOf(it, item.repsMax)))
+                }
+                Stepper(stringResource(R.string.reps_max), item.repsMax, 1..50, Modifier.weight(1f)) {
+                    onChange(item.copy(repsMax = it, reps = minOf(it, item.reps)))
+                }
             }
         }
         Text(
-            "${item.sets} × ${repsRange(item.reps, item.repsMax)}",
+            "${item.sets} × " + if (item.toFailure) stringResource(R.string.failure) else repsRange(item.reps, item.repsMax),
             color = Muted,
             fontSize = 12.sp,
             modifier = Modifier.padding(start = 2.dp, top = 6.dp)

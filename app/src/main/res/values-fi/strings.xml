@@ -97,4 +97,11 @@
     <string name="up_to_date">Sinulla on uusin versio</string>
     <string name="update_error">Päivitysten tarkistus epäonnistui. Tarkista nettiyhteys.</string>
     <string name="download_version">Lataa versio %1$s</string>
+    <string name="to_failure">Uupumukseen</string>
+    <string name="failure">uupumus</string>
+    <string name="failure_short">U</string>
+    <string name="note">Muistiinpano</string>
+    <string name="note_hint">esim. penkin korkeus 4, kapea ote</string>
+    <string name="edit_set">Muokkaa sarjaa %1$d</string>
+    <string name="reps_empty_failure">Tyhjä toistokenttä = uupumukseen</string>
 </resources>

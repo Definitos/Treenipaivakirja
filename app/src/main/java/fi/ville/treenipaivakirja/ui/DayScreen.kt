@@ -97,6 +97,7 @@ import fi.ville.treenipaivakirja.epley
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.text.input.ImeAction
@@ -182,6 +183,8 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
                 ExerciseCard(
                     group = g,
                     onLog = { reps, kg -> vm.logSet(g.exercise.id, reps, kg) },
+                    onUpdate = vm::updateSet,
+                    onNote = { vm.setNote(g.exercise.id, it) },
                     onRemove = { vm.removeExerciseFromDay(g.exercise.id) },
                     onDelete = { set ->
                         vm.deleteSet(set)
@@ -573,10 +576,16 @@ private val Warn = Color(0xFFFFB04D)
 private fun ExerciseCard(
     group: ExerciseGroup,
     onLog: (reps: Int, weightKg: Double) -> Unit,
+    onUpdate: (WorkoutSet) -> Unit,
+    onNote: (String) -> Unit,
     onRemove: () -> Unit,
     onDelete: (WorkoutSet) -> Unit
 ) {
     val unit = LocalUnit.current
+    val failureText = stringResource(R.string.failure)
+    val failureShort = stringResource(R.string.failure_short)
+    var editing by remember { mutableStateOf<Pair<Int, WorkoutSet>?>(null) }
+    var editingNote by remember { mutableStateOf(false) }
     val best = group.sets.maxByOrNull { epley(it.weight, it.reps) }
     var menu by remember { mutableStateOf(false) }
     val hasTarget = group.targetSets > 0
@@ -600,6 +609,7 @@ private fun ExerciseCard(
 
     /** Toistokentän vihje: ohjelman haarukka tai edellisen kerran toistot. */
     fun repsHint(n: Int): String = when {
+        group.toFailure -> failureText
         group.targetReps > 0 -> repsRange(group.targetReps, group.targetRepsMax)
         else -> group.previous.getOrNull(n)?.reps?.toString() ?: ""
     }
@@ -628,7 +638,8 @@ private fun ExerciseCard(
             )
             if (hasTarget) {
                 Text(
-                    "$logged/${group.targetSets} × ${repsRange(group.targetReps, group.targetRepsMax)}",
+                    "$logged/${group.targetSets} × " +
+                        if (group.toFailure) failureText else repsRange(group.targetReps, group.targetRepsMax),
                     color = if (done) Color.Black else Lime,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -639,7 +650,7 @@ private fun ExerciseCard(
                 )
             } else if (best != null) {
                 Text(
-                    "${wt(best.weight)} × ${best.reps}",
+                    "${wt(best.weight)} × ${if (best.reps == 0) failureShort else best.reps}",
                     color = Lime,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -655,6 +666,11 @@ private fun ExerciseCard(
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.note)) },
+                        leadingIcon = { Icon(Icons.Filled.EditNote, null) },
+                        onClick = { menu = false; editingNote = true }
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.remove_from_day)) },
                         leadingIcon = { Icon(Icons.Outlined.Delete, null) },
                         onClick = { menu = false; onRemove() }
@@ -663,11 +679,29 @@ private fun ExerciseCard(
             }
         }
         if (group.previous.isNotEmpty()) {
-            val prevText = group.previous.joinToString(" · ") { "${num(unit.fromKg(it.weight))}×${it.reps}" }
+            val prevText = group.previous.joinToString(" · ") {
+                "${num(unit.fromKg(it.weight))}×${if (it.reps == 0) failureShort else it.reps}"
+            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 14.dp, top = 2.dp)) {
                 Icon(Icons.Filled.History, null, tint = Muted, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.last_time, prevText), color = Muted, fontSize = 12.sp, maxLines = 1)
+            }
+        }
+        val note = group.exercise.note
+        if (!note.isNullOrBlank()) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier
+                    .padding(start = 14.dp, top = 6.dp, end = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(CardBg2)
+                    .clickable { editingNote = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Filled.EditNote, null, tint = Cyan, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(note, color = Color.White, fontSize = 13.sp)
             }
         }
         if (goHeavier) {
@@ -689,6 +723,7 @@ private fun ExerciseCard(
         // Kirjatut sarjat
         group.sets.forEachIndexed { i, s ->
             val repsColor = when {
+                group.toFailure || s.reps == 0 -> Muted
                 group.targetReps > 0 && s.reps < group.targetReps -> Warn
                 group.targetReps > 0 && s.reps >= topReps -> Lime
                 else -> Muted
@@ -696,6 +731,8 @@ private fun ExerciseCard(
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { editing = i to s }
                     .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -714,7 +751,10 @@ private fun ExerciseCard(
                     fontSize = 16.sp,
                     modifier = Modifier.weight(1f)
                 )
-                Text(stringResource(R.string.reps_count, s.reps), color = repsColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (s.reps == 0) failureText else stringResource(R.string.reps_count, s.reps),
+                    color = repsColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                )
                 IconButton(onClick = { onDelete(s) }) {
                     Icon(Icons.Outlined.Delete, stringResource(R.string.delete_set), tint = Muted, modifier = Modifier.size(20.dp))
                 }
@@ -732,6 +772,7 @@ private fun ExerciseCard(
                     input = input,
                     unitLabel = unit.label,
                     repsHint = hint,
+                    allowEmptyReps = group.toFailure,
                     onChange = { pending[n] = it },
                     onSave = { reps, weightInUnit ->
                         onLog(reps, unit.toKg(weightInUnit))
@@ -753,6 +794,119 @@ private fun ExerciseCard(
             Text(stringResource(R.string.add_set), fontWeight = FontWeight.SemiBold)
         }
     }
+
+    editing?.let { (index, set) ->
+        EditSetDialog(
+            number = index + 1,
+            set = set,
+            allowEmptyReps = group.toFailure || set.reps == 0,
+            onDismiss = { editing = null },
+            onSave = { onUpdate(it); editing = null },
+            onDelete = { onDelete(set); editing = null }
+        )
+    }
+
+    if (editingNote) {
+        NoteDialog(
+            title = group.exercise.name,
+            initial = group.exercise.note.orEmpty(),
+            onDismiss = { editingNote = false },
+            onSave = { onNote(it); editingNote = false }
+        )
+    }
+}
+
+@Composable
+private fun EditSetDialog(
+    number: Int,
+    set: WorkoutSet,
+    allowEmptyReps: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (WorkoutSet) -> Unit,
+    onDelete: () -> Unit
+) {
+    val unit = LocalUnit.current
+    var weight by remember { mutableStateOf(editable(unit.fromKg(set.weight))) }
+    var reps by remember { mutableStateOf(if (set.reps == 0) "" else set.reps.toString()) }
+    val w = parseDecimal(weight)
+    val r = reps.toIntOrNull() ?: if (reps.isBlank() && allowEmptyReps) 0 else null
+    val valid = w != null && w >= 0 && r != null && (r > 0 || allowEmptyReps)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBg,
+        title = { Text(stringResource(R.string.edit_set, number), fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = { v -> weight = v.filter { it.isDigit() || it == ',' || it == '.' } },
+                        label = { Text(stringResource(R.string.weight)) },
+                        suffix = { Text(unit.label) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = reps,
+                        onValueChange = { v -> reps = v.filter { it.isDigit() } },
+                        label = { Text(stringResource(R.string.reps)) },
+                        placeholder = { if (allowEmptyReps) Text(stringResource(R.string.failure)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (allowEmptyReps) {
+                    Text(stringResource(R.string.reps_empty_failure), color = Muted, fontSize = 12.sp)
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.delete_set), color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (valid) onSave(set.copy(weight = unit.toKg(w!!), reps = r!!)) },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black)
+            ) { Text(stringResource(R.string.save), fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
+}
+
+@Composable
+private fun NoteDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBg,
+        icon = { Icon(Icons.Filled.EditNote, null, tint = Cyan) },
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text(stringResource(R.string.note)) },
+                placeholder = { Text(stringResource(R.string.note_hint)) },
+                minLines = 2,
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(text) },
+                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black)
+            ) { Text(stringResource(R.string.save), fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }
 
 @Composable
@@ -761,13 +915,18 @@ private fun PendingSetRow(
     input: PendingInput,
     unitLabel: String,
     repsHint: String,
+    allowEmptyReps: Boolean,
     onChange: (PendingInput) -> Unit,
     onSave: (reps: Int, weightInUnit: Double) -> Unit
 ) {
     val weight = parseDecimal(input.weight)
-    // Tyhjä toistokenttä hyväksytään, jos vihje on yksittäinen luku (esim. viime kerran toistot)
-    val reps = input.reps.toIntOrNull() ?: if (input.reps.isBlank()) repsHint.toIntOrNull() else null
-    val valid = weight != null && weight >= 0 && reps != null && reps > 0
+    // Tyhjä toistokenttä: uupumus-liikkeissä 0 (= ei laskettu), muuten vihje jos se on luku
+    val reps = input.reps.toIntOrNull() ?: when {
+        input.reps.isNotBlank() -> null
+        allowEmptyReps -> 0
+        else -> repsHint.toIntOrNull()
+    }
+    val valid = weight != null && weight >= 0 && reps != null && (reps > 0 || allowEmptyReps)
     val save = { if (valid) onSave(reps!!, weight!!) }
 
     Row(

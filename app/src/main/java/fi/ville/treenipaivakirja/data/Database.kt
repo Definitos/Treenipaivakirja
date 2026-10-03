@@ -23,7 +23,8 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "exercises", indices = [Index(value = ["name"], unique = true)])
 data class Exercise(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String
+    val name: String,
+    val note: String? = null          // pysyvä muistiinpano, esim. "penkin korkeus 4"
 )
 
 /** Yksi sarja: tietty liike, päivä, toistot ja kilot. */
@@ -69,7 +70,8 @@ data class TemplateExercise(
     val position: Int,
     val targetSets: Int,
     val targetReps: Int,                                   // toistohaarukan alaraja (tai kiinteä)
-    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0  // yläraja, 0 = ei haarukkaa
+    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0, // yläraja, 0 = ei haarukkaa
+    @ColumnInfo(defaultValue = "0") val toFailure: Boolean = false // tavoite: uupumukseen asti
 )
 
 /** Päivälle suunniteltu/kirjattu liike (järjestys + tavoite). */
@@ -85,7 +87,8 @@ data class DayExercise(
     val position: Int,
     val targetSets: Int,
     val targetReps: Int,                                   // toistohaarukan alaraja (tai kiinteä)
-    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0  // yläraja, 0 = ei haarukkaa
+    @ColumnInfo(defaultValue = "0") val targetRepsMax: Int = 0, // yläraja, 0 = ei haarukkaa
+    @ColumnInfo(defaultValue = "0") val toFailure: Boolean = false // tavoite: uupumukseen asti
 )
 
 @Dao
@@ -106,6 +109,12 @@ interface WorkoutDao {
 
     @Delete
     suspend fun deleteSet(set: WorkoutSet)
+
+    @Update
+    suspend fun updateSet(set: WorkoutSet)
+
+    @Query("UPDATE exercises SET note = :note WHERE id = :exerciseId")
+    suspend fun setNote(exerciseId: Long, note: String?)
 
     @Query("DELETE FROM sets WHERE epochDay = :day AND exerciseId = :exerciseId")
     suspend fun deleteSetsFor(day: Long, exerciseId: Long)
@@ -192,10 +201,21 @@ object Schema2 {
  * CI tarkistaa, että nämä vastaavat Roomia (ja siten että ALTER-lauseet tuottavat oikean skeeman).
  */
 object SchemaCheck {
-    const val TEMPLATE_EXERCISES_V3 =
-        "CREATE TABLE IF NOT EXISTS `template_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `templateId` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`templateId`) REFERENCES `templates`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
-    const val DAY_EXERCISES_V3 =
-        "CREATE TABLE IF NOT EXISTS `day_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+    const val EXERCISES_V4 =
+        "CREATE TABLE IF NOT EXISTS `exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `note` TEXT)"
+    const val TEMPLATE_EXERCISES_V4 =
+        "CREATE TABLE IF NOT EXISTS `template_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `templateId` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, `toFailure` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`templateId`) REFERENCES `templates`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+    const val DAY_EXERCISES_V4 =
+        "CREATE TABLE IF NOT EXISTS `day_exercises` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `exerciseId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `targetSets` INTEGER NOT NULL, `targetReps` INTEGER NOT NULL, `targetRepsMax` INTEGER NOT NULL DEFAULT 0, `toFailure` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+}
+
+/** v3 -> v4: liikkeen muistiinpano ja failure-tavoite. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `exercises` ADD COLUMN `note` TEXT")
+        db.execSQL("ALTER TABLE `template_exercises` ADD COLUMN `toFailure` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `day_exercises` ADD COLUMN `toFailure` INTEGER NOT NULL DEFAULT 0")
+    }
 }
 
 /** v2 -> v3: toistohaarukan yläraja. */
@@ -226,7 +246,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 
 @Database(
     entities = [Exercise::class, WorkoutSet::class, Template::class, TemplateExercise::class, DayExercise::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -241,7 +261,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "treenit.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }

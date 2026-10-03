@@ -97,4 +97,11 @@
     <string name="up_to_date">You have the latest version</string>
     <string name="update_error">Couldn’t check for updates. Check your connection.</string>
     <string name="download_version">Download version %1$s</string>
+    <string name="to_failure">To failure</string>
+    <string name="failure">failure</string>
+    <string name="failure_short">F</string>
+    <string name="note">Note</string>
+    <string name="note_hint">e.g. bench height 4, narrow grip</string>
+    <string name="edit_set">Edit set %1$d</string>
+    <string name="reps_empty_failure">Leave reps empty = to failure</string>
 </resources>
