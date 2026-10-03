@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.Icon
@@ -34,6 +35,7 @@ import fi.ville.treenipaivakirja.ui.DayScreen
 import fi.ville.treenipaivakirja.ui.HistoryScreen
 import fi.ville.treenipaivakirja.ui.Lime
 import fi.ville.treenipaivakirja.ui.Muted
+import fi.ville.treenipaivakirja.ui.TemplatesScreen
 import fi.ville.treenipaivakirja.ui.TreeniTheme
 
 class MainActivity : ComponentActivity() {
@@ -69,6 +71,11 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
                 )
                 NavigationBarItem(
                     selected = tab == 1, onClick = { tab = 1 },
+                    icon = { Icon(Icons.Filled.Bookmarks, contentDescription = null) },
+                    label = { Text("Ohjelmat") }, colors = itemColors
+                )
+                NavigationBarItem(
+                    selected = tab == 2, onClick = { tab = 2 },
                     icon = { Icon(Icons.Filled.Timeline, contentDescription = null) },
                     label = { Text("Historia") }, colors = itemColors
                 )
@@ -78,6 +85,7 @@ fun TreeniApp(vm: WorkoutViewModel = viewModel()) {
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (tab) {
                 0 -> DayScreen(vm, snackbar)
+                1 -> TemplatesScreen(vm)
                 else -> HistoryScreen(vm)
             }
         }

@@ -28,6 +28,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -35,6 +39,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -82,8 +94,25 @@ data class AddPrefill(
     val name: String = "",
     val reps: String = "",
     val weight: String = "",
-    val lockName: Boolean = false
+    val lockName: Boolean = false,
+    val count: Int = 1
 )
+
+/** Esitäyttö: tämän päivän viimeisin sarja > tavoite > edellisen kerran vastaava sarja. */
+private fun prefillFor(g: ExerciseGroup): AddPrefill {
+    val last = g.sets.lastOrNull()
+    val prev = g.previous.getOrNull(g.sets.size) ?: g.previous.lastOrNull()
+    val reps = last?.reps ?: g.targetReps.takeIf { it > 0 } ?: prev?.reps
+    val weight = last?.weight ?: prev?.weight
+    val remaining = g.targetSets - g.sets.size
+    return AddPrefill(
+        name = g.exercise.name,
+        reps = reps?.toString() ?: "",
+        weight = weight?.let(::editable) ?: "",
+        lockName = true,
+        count = if (remaining > 0) remaining else 1
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +121,9 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
     val groups by vm.dayGroups.collectAsStateWithLifecycle()
     val trainingDays by vm.trainingDays.collectAsStateWithLifecycle()
     val exercises by vm.exercises.collectAsStateWithLifecycle()
+    val templates by vm.templates.collectAsStateWithLifecycle()
+    var showTemplates by remember { mutableStateOf(false) }
+    var showSaveTemplate by remember { mutableStateOf(false) }
 
     var dialog by remember { mutableStateOf<AddPrefill?>(null) }
     var showPicker by remember { mutableStateOf(false) }
@@ -114,19 +146,36 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
             }
             item { WeekStrip(day, trainingDays) { vm.selectedDay.value = it } }
             item { SummaryCard(groups) }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { showTemplates = true },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.Bookmarks, null, tint = Lime, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Lataa ohjelma", color = Color.White)
+                    }
+                    if (groups.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = { showSaveTemplate = true },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.BookmarkAdd, null, tint = Cyan, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Tallenna ohjelmaksi", color = Color.White, maxLines = 1)
+                        }
+                    }
+                }
+            }
             if (groups.isEmpty()) item { EmptyDay() }
             items(groups, key = { it.exercise.id }) { g ->
                 ExerciseCard(
                     group = g,
-                    onAddSet = {
-                        val last = g.sets.last()
-                        dialog = AddPrefill(
-                            name = g.exercise.name,
-                            reps = last.reps.toString(),
-                            weight = editable(last.weight),
-                            lockName = true
-                        )
-                    },
+                    onAddSet = { dialog = prefillFor(g) },
+                    onRemove = { vm.removeExerciseFromDay(g.exercise.id) },
                     onDelete = { set ->
                         vm.deleteSet(set)
                         scope.launch {
@@ -164,6 +213,74 @@ fun DayScreen(vm: WorkoutViewModel, snackbar: SnackbarHostState) {
                 vm.addSets(name, reps, weight, count)
                 dialog = null
             }
+        )
+    }
+
+    if (showTemplates) {
+        ModalBottomSheet(
+            onDismissRequest = { showTemplates = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Bg
+        ) {
+            Column(
+                Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Valitse treeniohjelma", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                Text(day.fiLong(), color = Muted, fontSize = 14.sp)
+                if (templates.isEmpty()) {
+                    Text(
+                        "Kirjastossa ei ole vielä ohjelmia. Luo ohjelma Ohjelmat-välilehdellä tai tallenna päivän treeni ohjelmaksi.",
+                        color = Muted
+                    )
+                }
+                templates.forEach { t ->
+                    TemplateCard(t, onClick = {
+                        vm.applyTemplate(t.template.id)
+                        showTemplates = false
+                        scope.launch { snackbar.showSnackbar("${t.template.name} lisätty päivälle") }
+                    })
+                }
+            }
+        }
+    }
+
+    if (showSaveTemplate) {
+        var tName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showSaveTemplate = false },
+            containerColor = CardBg,
+            title = { Text("Tallenna ohjelmaksi", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Päivän ${groups.size} liikettä tallennetaan kirjastoon.", color = Muted, fontSize = 14.sp)
+                    OutlinedTextField(
+                        value = tName,
+                        onValueChange = { tName = it },
+                        label = { Text("Ohjelman nimi") },
+                        placeholder = { Text("esim. Yläkroppa 1") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.saveDayAsTemplate(tName)
+                        showSaveTemplate = false
+                        scope.launch { snackbar.showSnackbar("Ohjelma \"${tName.trim()}\" tallennettu") }
+                    },
+                    enabled = tName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black)
+                ) { Text("Tallenna", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showSaveTemplate = false }) { Text("Peruuta") } }
         )
     }
 
@@ -335,7 +452,7 @@ private fun EmptyDay() {
         Spacer(Modifier.height(12.dp))
         Text("Ei treenejä tälle päivälle", fontWeight = FontWeight.Bold, color = Color.White)
         Text(
-            "Paina \"Lisää liike\" ja kirjaa ensimmäinen sarja.",
+            "Lataa valmis ohjelma tai lisää liike napista.",
             color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center
         )
     }
@@ -345,9 +462,13 @@ private fun EmptyDay() {
 private fun ExerciseCard(
     group: ExerciseGroup,
     onAddSet: () -> Unit,
+    onRemove: () -> Unit,
     onDelete: (WorkoutSet) -> Unit
 ) {
     val best = group.sets.maxByOrNull { epley(it.weight, it.reps) }
+    var menu by remember { mutableStateOf(false) }
+    val hasTarget = group.targetSets > 0
+    val done = hasTarget && group.sets.size >= group.targetSets
     Column(
         Modifier
             .fillMaxWidth()
@@ -370,17 +491,51 @@ private fun ExerciseCard(
                 color = Color.White,
                 modifier = Modifier.weight(1f)
             )
-            best?.let {
+            if (hasTarget) {
+                Text(
+                    "${group.sets.size}/${group.targetSets} × ${group.targetReps}",
+                    color = if (done) Color.Black else Lime,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .then(if (done) Modifier.background(AccentBrush) else Modifier.background(Lime.copy(alpha = 0.12f)))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            } else best?.let {
                 Text(
                     "${num(it.weight)} kg × ${it.reps}",
                     color = Lime,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
-                        .padding(end = 8.dp)
                         .clip(RoundedCornerShape(50))
                         .background(Lime.copy(alpha = 0.12f))
                         .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Filled.MoreVert, "Valikko", tint = Muted)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Poista liike päivältä") },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                        onClick = { menu = false; onRemove() }
+                    )
+                }
+            }
+        }
+        if (group.previous.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 14.dp, top = 2.dp)) {
+                Icon(Icons.Filled.History, null, tint = Muted, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "Viimeksi: " + group.previous.joinToString(" · ") { "${num(it.weight)}×${it.reps}" },
+                    color = Muted,
+                    fontSize = 12.sp,
+                    maxLines = 1
                 )
             }
         }
@@ -413,10 +568,25 @@ private fun ExerciseCard(
                 }
             }
         }
-        TextButton(onClick = onAddSet) {
-            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Lisää sarja", fontWeight = FontWeight.SemiBold)
+        if (group.sets.isEmpty()) {
+            Button(
+                onClick = onAddSet,
+                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color.Black),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 8.dp, top = 4.dp, bottom = 10.dp)
+            ) {
+                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Kirjaa sarjat", fontWeight = FontWeight.Bold)
+            }
+        } else {
+            TextButton(onClick = onAddSet) {
+                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (hasTarget && !done) "Kirjaa seuraava" else "Lisää sarja", fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -431,7 +601,7 @@ private fun AddSetDialog(
     var name by remember { mutableStateOf(prefill.name) }
     var reps by remember { mutableStateOf(prefill.reps) }
     var weight by remember { mutableStateOf(prefill.weight) }
-    var count by remember { mutableIntStateOf(1) }
+    var count by remember { mutableIntStateOf(prefill.count) }
 
     val repsInt = reps.toIntOrNull()
     val weightD = weight.replace(',', '.').toDoubleOrNull()

@@ -13,16 +13,32 @@ android {
         applicationId = "fi.ville.treenipaivakirja"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI:n ajonumero kasvattaa versiota, jotta päivitys asentuu vanhan päälle
+        val run = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionCode = run + 1
+        versionName = "1.$run"
+    }
+
+    // Kiinteä allekirjoitusavain: muuten jokainen CI-käännös saisi eri avaimen
+    // eikä päivitys asentuisi vanhan päälle.
+    signingConfigs {
+        create("treeni") {
+            storeFile = file("treeni.jks")
+            storePassword = "treeni123"
+            keyAlias = "treeni"
+            keyPassword = "treeni123"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("treeni")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("treeni")
         }
     }
     compileOptions {

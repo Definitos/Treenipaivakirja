@@ -3,10 +3,15 @@ package fi.ville.treenipaivakirja
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import fi.ville.treenipaivakirja.data.AppDatabase
+import fi.ville.treenipaivakirja.data.DayExercise
 import fi.ville.treenipaivakirja.data.Exercise
+import fi.ville.treenipaivakirja.data.Template
+import fi.ville.treenipaivakirja.data.TemplateExercise
 import fi.ville.treenipaivakirja.data.WorkoutSet
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +23,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-data class ExerciseGroup(val exercise: Exercise, val sets: List<WorkoutSet>)
+/** Päivän yksi liike: kirjatut sarjat, tavoite ja edellisen kerran sarjat. */
+data class ExerciseGroup(
+    val exercise: Exercise,
+    val sets: List<WorkoutSet>,
+    val targetSets: Int,
+    val targetReps: Int,
+    val previous: List<WorkoutSet>
+)
 
 /** Yhden liikkeen yhden päivän yhteenveto historiakäyrää varten. */
 data class DayStat(
@@ -28,6 +40,13 @@ data class DayStat(
     val volume: Double,
     val sets: List<WorkoutSet>
 )
+
+data class TemplateItem(val exerciseName: String, val targetSets: Int, val targetReps: Int)
+data class TemplateWithItems(val template: Template, val items: List<TemplateItem>)
+
+/** Ohjelmaeditorin muokattava rivi. key = vakaa tunniste listaa varten. */
+data class DraftItem(val key: Long, val name: String, val sets: Int, val reps: Int)
+data class TemplateDraft(val id: Long?, val name: String, val items: List<DraftItem>)
 
 enum class Metric(val label: String) {
     MAX("Maks. paino"),
@@ -45,11 +64,15 @@ fun DayStat.value(m: Metric): Double = when (m) {
 fun epley(weight: Double, reps: Int): Double =
     if (reps <= 1) weight else weight * (1 + reps / 30.0)
 
+private var keyCounter = 0L
+fun newKey(): Long = System.nanoTime() + (keyCounter++)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val dao = AppDatabase.get(app).dao()
-    private fun <T> kotlinx.coroutines.flow.Flow<T>.state(initial: T): StateFlow<T> =
+    private val db = AppDatabase.get(app)
+    private val dao = db.dao()
+    private fun <T> Flow<T>.state(initial: T): StateFlow<T> =
         stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
 
     // ---------- Päivänäkymä ----------
@@ -61,31 +84,137 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         dao.trainingDays().map { it.toSet() }.state(emptySet())
 
     val dayGroups: StateFlow<List<ExerciseGroup>> =
-        combine(
-            selectedDay.flatMapLatest { dao.setsForDay(it.toEpochDay()) },
-            dao.exercises()
-        ) { sets, exList ->
-            val byId = exList.associateBy { it.id }
-            sets.groupBy { it.exerciseId }          // säilyttää lisäysjärjestyksen
-                .mapNotNull { (id, s) -> byId[id]?.let { ExerciseGroup(it, s) } }
+        selectedDay.flatMapLatest { date ->
+            val day = date.toEpochDay()
+            combine(
+                dao.dayExercises(day),
+                dao.setsForDay(day),
+                dao.previousSessions(day),
+                dao.exercises()
+            ) { planned, sets, prev, exList ->
+                val byId = exList.associateBy { it.id }
+                val setsBy = sets.groupBy { it.exerciseId }
+                val prevBy = prev.groupBy { it.exerciseId }
+                val plannedBy = planned.associateBy { it.exerciseId }
+                val order = planned.map { it.exerciseId } +
+                    setsBy.keys.filter { it !in plannedBy }
+                order.mapNotNull { id ->
+                    byId[id]?.let {
+                        ExerciseGroup(
+                            exercise = it,
+                            sets = setsBy[id].orEmpty(),
+                            targetSets = plannedBy[id]?.targetSets ?: 0,
+                            targetReps = plannedBy[id]?.targetReps ?: 0,
+                            previous = prevBy[id].orEmpty()
+                        )
+                    }
+                }
+            }
         }.state(emptyList())
 
-    fun addSets(name: String, reps: Int, weight: Double, count: Int) {
+    private suspend fun exerciseId(name: String): Long {
         val clean = name.trim()
-        if (clean.isEmpty() || reps <= 0 || count <= 0) return
+        return dao.findExercise(clean)?.id ?: dao.insertExercise(Exercise(name = clean))
+    }
+
+    fun addSets(name: String, reps: Int, weight: Double, count: Int) {
+        if (name.isBlank() || reps <= 0 || count <= 0) return
         viewModelScope.launch {
-            val exId = dao.findExercise(clean)?.id ?: dao.insertExercise(Exercise(name = clean))
-            val day = selectedDay.value.toEpochDay()
-            val now = System.currentTimeMillis()
-            dao.insertSets(List(count) {
-                WorkoutSet(exerciseId = exId, epochDay = day, reps = reps, weight = weight, createdAt = now + it)
-            })
+            db.withTransaction {
+                val exId = exerciseId(name)
+                val day = selectedDay.value.toEpochDay()
+                // Varmista, että liike on päivän listalla (IGNORE jos jo on)
+                dao.insertDayExercises(
+                    listOf(DayExercise(epochDay = day, exerciseId = exId, position = dao.maxDayPosition(day) + 1, targetSets = 0, targetReps = 0))
+                )
+                val now = System.currentTimeMillis()
+                dao.insertSets(List(count) {
+                    WorkoutSet(exerciseId = exId, epochDay = day, reps = reps, weight = weight, createdAt = now + it)
+                })
+            }
         }
     }
 
     fun deleteSet(set: WorkoutSet) = viewModelScope.launch { dao.deleteSet(set) }
 
     fun restoreSet(set: WorkoutSet) = viewModelScope.launch { dao.insertSets(listOf(set)) }
+
+    fun removeExerciseFromDay(exerciseId: Long) = viewModelScope.launch {
+        val day = selectedDay.value.toEpochDay()
+        db.withTransaction {
+            dao.deleteSetsFor(day, exerciseId)
+            dao.deleteDayExercise(day, exerciseId)
+        }
+    }
+
+    /** Lisää ohjelman liikkeet valitulle päivälle (jo olemassa olevat ohitetaan). */
+    fun applyTemplate(templateId: Long) = viewModelScope.launch {
+        val day = selectedDay.value.toEpochDay()
+        db.withTransaction {
+            var pos = dao.maxDayPosition(day) + 1
+            val items = dao.templateExercisesOf(templateId).map {
+                DayExercise(epochDay = day, exerciseId = it.exerciseId, position = pos++, targetSets = it.targetSets, targetReps = it.targetReps)
+            }
+            dao.insertDayExercises(items)
+        }
+    }
+
+    /** Tallentaa valitun päivän liikkeet uudeksi ohjelmaksi. */
+    fun saveDayAsTemplate(name: String) {
+        val groups = dayGroups.value
+        if (name.isBlank() || groups.isEmpty()) return
+        val items = groups.map { g ->
+            val reps = when {
+                g.targetReps > 0 -> g.targetReps
+                g.sets.isNotEmpty() -> g.sets.groupingBy { it.reps }.eachCount().maxBy { it.value }.key
+                else -> 10
+            }
+            DraftItem(newKey(), g.exercise.name, maxOf(g.sets.size, g.targetSets, 1), reps)
+        }
+        saveTemplate(TemplateDraft(null, name, items))
+    }
+
+    // ---------- Ohjelmat ----------
+    val templates: StateFlow<List<TemplateWithItems>> =
+        combine(dao.templates(), dao.templateExercises(), dao.exercises()) { ts, tes, exList ->
+            val names = exList.associate { it.id to it.name }
+            val byTemplate = tes.groupBy { it.templateId }
+            ts.map { t ->
+                TemplateWithItems(
+                    t,
+                    byTemplate[t.id].orEmpty().map {
+                        TemplateItem(names[it.exerciseId] ?: "?", it.targetSets, it.targetReps)
+                    }
+                )
+            }
+        }.state(emptyList())
+
+    fun saveTemplate(draft: TemplateDraft) {
+        val items = draft.items.filter { it.name.isNotBlank() }
+        if (draft.name.isBlank() || items.isEmpty()) return
+        viewModelScope.launch {
+            db.withTransaction {
+                val id = if (draft.id == null) {
+                    dao.insertTemplate(Template(name = draft.name.trim()))
+                } else {
+                    dao.updateTemplate(Template(id = draft.id, name = draft.name.trim()))
+                    dao.clearTemplate(draft.id)
+                    draft.id
+                }
+                dao.insertTemplateExercises(items.mapIndexed { i, it ->
+                    TemplateExercise(
+                        templateId = id,
+                        exerciseId = exerciseId(it.name),
+                        position = i,
+                        targetSets = it.sets,
+                        targetReps = it.reps
+                    )
+                })
+            }
+        }
+    }
+
+    fun deleteTemplate(id: Long) = viewModelScope.launch { dao.deleteTemplate(id) }
 
     // ---------- Historia ----------
     val historyExerciseId = MutableStateFlow<Long?>(null)
