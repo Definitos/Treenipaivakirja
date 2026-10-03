@@ -16,3 +16,6 @@ APK ilman puhelinta: Build → Build App Bundle(s) / APK(s) → Build APK(s)
 - `ui/DayScreen.kt` – päivänäkymä, viikkonauha, lisäysdialogi
 - `ui/HistoryScreen.kt` + `ui/LineChart.kt` – kehityskäyrät
 - `ui/Theme.kt` – värit ja muotoilu
+
+## Tekijänoikeus
+© 2026 Definitos. Kaikki oikeudet pidätetään. Ks. [LICENSE](LICENSE).

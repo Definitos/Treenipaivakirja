@@ -86,4 +86,6 @@
     <string name="go_heavier">Nosta painoa ensi kerralla</string>
     <string name="save_set">Tallenna sarja</string>
     <string name="target">Tavoite %1$s</string>
+    <string name="version">Versio %1$s</string>
+    <string name="copyright">© 2026 Definitos. Kaikki oikeudet pidätetään.</string>
 </resources>

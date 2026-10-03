@@ -86,4 +86,6 @@
     <string name="go_heavier">Go heavier next time</string>
     <string name="save_set">Save set</string>
     <string name="target">Target %1$s</string>
+    <string name="version">Version %1$s</string>
+    <string name="copyright">© 2026 Definitos. All rights reserved.</string>
 </resources>

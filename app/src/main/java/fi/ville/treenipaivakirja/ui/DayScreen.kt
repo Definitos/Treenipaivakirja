@@ -52,6 +52,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -360,6 +361,20 @@ private fun SettingsDialog(unit: WeightUnit, onUnit: (WeightUnit) -> Unit, onDis
                                 .setData(Uri.fromParts("package", context.packageName, null))
                         )
                     }) { Text(stringResource(R.string.change_language), color = Color.White) }
+                }
+                HorizontalDivider(color = CardBg2, modifier = Modifier.padding(top = 8.dp))
+                val version = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+                        .getOrNull() ?: ""
+                }
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleSmall.copy(brush = AccentBrush),
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(stringResource(R.string.version, version), color = Muted, fontSize = 12.sp)
+                    Text(stringResource(R.string.copyright), color = Muted, fontSize = 12.sp, textAlign = TextAlign.Center)
                 }
             }
         },
